@@ -5,7 +5,11 @@ description: >
   "Transazioni 2026"). DUE casi di attivazione, entrambi obbligatori.
   (1) Il messaggio contiene un importo che sembra una spesa o un'entrata, anche
   in forma telegrafica ("12€ benzina", "15 al bar", "12 euro", "stipendio
-  2000"), anche come nota vocale o foto di scontrino.
+  2000"), anche come nota vocale o foto di scontrino. Vale anche per un importo
+  NUDO, senza nessun'altra parola ("30 euro", "15€", "12,50"): è una spesa da
+  registrare come le altre, con data e tipo di default, e la risposta è l'elenco
+  numerato delle categorie lette dal foglio — mai una domanda aperta tipo "di
+  cosa si tratta?", "per cosa?" o "è un'entrata o un'uscita?".
   (2) Il messaggio è brevissimo e da solo non significa niente — un numero nudo
   ("1", "2", "16"), un "sì", un "no", una parola sola ("cultura", "benzina",
   "supermercato"), un "procedi", "salva", "ok". Messaggi così NON sono
@@ -36,7 +40,8 @@ tags: [budget, google-sheets, finance, italian]
    nome reale: dove vedi `⟨…⟩` è un segnaposto (§5).
 4. **Una sola domanda per messaggio, e chiusa**: o un sì/no, o un elenco
    numerato scritto per intero. Unica domanda aperta ammessa: chiedere un
-   importo.
+   importo. Quando non sai la categoria, **l'elenco *è* la domanda**: "di cosa
+   si tratta?" non esiste in questo workflow.
 5. **Un turno = un messaggio**, che finisce sempre con il blocco `⟦ST⟧`.
 
 ---
@@ -237,6 +242,27 @@ puoi distinguerli guardando il messaggio.
 L'obiettivo è **arrivare al foglio nel minor numero di turni possibile**: ogni
 turno in più è un'occasione per perdere il contesto.
 
+### Il router del turno
+
+Classifica il messaggio e prendi la riga corrispondente. Non c'è una casella
+"chiedi chiarimenti":
+
+| Cosa è arrivato | Dove vai |
+|---|---|
+| Importo + parola che ti fa riconoscere la categoria (ed eventualmente la sottocategoria) | **B1** — riepilogo + sì/no |
+| Importo + categoria nominata dall'utente | **B3** |
+| **Importo e basta**, o con parole che non corrispondono a nessuna voce dell'output | **B2** — elenco completo delle categorie |
+| Numero nudo dentro il range di `opzioni`, con stato aperto | risolvi la scelta (`passo` dice se è cat o sub) |
+| "sì" / "no" con stato `passo=conferma` | sì → Fase C; no → B2 |
+| Correzione di un campo, con o senza via libera | §7 |
+| Nessun importo e nessuno stato aperto | non è una registrazione: rispondi normalmente |
+
+**"30 euro" è la terza riga**, ed è il caso più frequente di tutti. Data =
+oggi, Tipo = Uscita, descrizione `-`, e il messaggio che mandi è direttamente
+l'elenco numerato di B2. Non ti serve altro contesto per procedere: l'unica cosa
+che manca è la categoria, ed è esattamente quello che l'elenco sta per
+raccogliere.
+
 ### Fase A — capisci
 
 Estrai dall'input tutto quello che puoi (§6). Obbligatori per procedere:
@@ -252,6 +278,12 @@ Estrai dall'input tutto quello che puoi (§6). Obbligatori per procedere:
   che si chiama già così è rumore, meglio `-`.
 - **Note** = vuoto, salvo indicazioni esplicite tipo "da rimborsare", "pagato da
   Marco".
+
+> **Mancanza di informazioni ≠ ambiguità.** I default servono esattamente ai
+> messaggi nudi: "30 euro" è una Uscita di oggi senza descrizione, punto. Non
+> chiedere conferma di un default, non chiedere all'utente di raccontarti la
+> spesa, e non chiedergli se vuole registrarla — un importo mandato al bot è già
+> una richiesta di registrazione.
 
 ### Fase B — completa (massimo una domanda per turno)
 
@@ -272,8 +304,13 @@ a completare la riga, serve a farti smentire.
 Una categoria senza sottocategorie passa comunque da qui, con `sub=-`. Se arriva
 **no**, non chiedere "e allora quale?": passa a B2 e mostra l'elenco.
 
-**B2 — la categoria non è deducibile** (o l'utente ha appena detto "no").
-Elenca **tutte** le categorie dell'output, numerate, nell'ordine dell'output:
+**B2 — la categoria non c'è**: non l'ha scritta l'utente e non c'è un indizio che
+punti a una voce dell'output, oppure l'utente ha appena detto "no" a un B1. **Un
+importo nudo ("30 euro") cade sempre qui**, ed è la strada normale, non un
+ripiego per quando non sai che fare.
+
+Elenca **tutte** le categorie dell'output, numerate, nell'ordine dell'output.
+Data e Tipo li metti nel riepilogo già risolti dai default, senza chiederli:
 
 > 💰 *15,00 €* — 03/09/2026 (Uscita)
 > In che categoria?
@@ -451,9 +488,11 @@ davvero nell'output), proponi entrambe e vai a B1: è il percorso a un solo turn
 ### Tipo
 - `Entrata` se compare stipendio, bonifico ricevuto, cashback, dividendi,
   interessi, plusvalenza, vendita, o se la categoria è quella dello stipendio.
-- `Uscita` in tutti gli altri casi.
-- Chiedi solo se resta davvero ambiguo (un "rimborso" può andare in entrambe le
-  direzioni), e chiedilo come scelta fra due:
+- `Uscita` in tutti gli altri casi, **compreso un importo senza nessun contesto**:
+  "30 euro" è una Uscita. L'ambiguità è un segnale che punta in due direzioni
+  ("rimborso", "bonifico"), non l'assenza di segnali — e le uscite sono la
+  stragrande maggioranza di quello che passa da qui.
+- Chiedi solo nel caso davvero ambiguo, e chiedilo come scelta fra due:
   > Questi 50,00 € sono: *1.* Entrata  *2.* Uscita?
 
 ### Nota vocale
@@ -567,28 +606,45 @@ nomi letti da `read-categories`, tutti e senza parentesi.
 > **Tu**: ✅ Registrata (riga 43) … + link
 > ⟦ST …|passo=fatto|riga=A43:G43⟧
 
-**Esempio 2 — categoria non deducibile, poi sottocategoria (B2 → B3)**
+**Esempio 2 — importo nudo, il caso più frequente (B2 → B3)**
 
-> **Utente**: 15€
+> **Utente**: 30 euro
 >
-> **Tu**: 💰 *15,00 €* — 03/09/2026 (Uscita)
+> *(blocco di apertura: STATO vuoto, OGGI = 03/09/2026, CATEGORIE = 14 voci —
+> quante siano lo dice l'output, non è un numero fisso)*
+>
+> **Tu**: 💰 *30,00 €* — 03/09/2026 (Uscita)
 > In che categoria?
-> 1. ⟨1ª dell'output⟩
+> 1. ⟨1ª voce dell'output⟩
 > 2. ⟨2ª⟩
-> *(…tutte quelle dell'output, una per riga, nel suo ordine…)*
-> N. ⟨ultima⟩
+> 3. ⟨3ª⟩
+> 4. ⟨4ª⟩
+> 5. ⟨5ª⟩
+> 6. ⟨6ª⟩
+> 7. ⟨7ª⟩
+> 8. ⟨8ª⟩
+> 9. ⟨9ª⟩
+> 10. ⟨10ª⟩
+> 11. ⟨11ª⟩
+> 12. ⟨12ª⟩
+> 13. ⟨13ª⟩
+> 14. ⟨14ª e ultima⟩
 > Rispondi con il numero.
-> ⟦ST imp=15.00|data=03/09/2026|tipo=U|cat=?|sub=?|desc=-|note=-|passo=cat⟧
->
+> ⟦ST imp=30.00|data=03/09/2026|tipo=U|cat=?|sub=?|desc=-|note=-|passo=cat⟧
+
+Guarda tre cose di questo messaggio: la data e `(Uscita)` ci sono già senza aver
+chiesto niente, le voci sono scritte **tutte** fino all'ultima, e non compare
+nessuna domanda su cosa fosse la spesa. Un turno solo, una domanda sola, chiusa.
+
 > **Utente**: 3
 >
-> **Tu**: 15,00 € — 03/09/2026 (Uscita) → *⟨3ª voce di `opzioni`⟩*
+> **Tu**: 30,00 € — 03/09/2026 (Uscita) → *⟨3ª voce di `opzioni`⟩*
 > Quale sottocategoria?
 > 1. ⟨1ª sottocategoria di quella categoria⟩
-> *(…tutte…)*
+> *(…tutte, una per riga…)*
 > N. ⟨ultima⟩
 > Rispondi con il numero.
-> ⟦ST imp=15.00|…|cat=⟨3ª voce⟩|sub=?|passo=sub⟧
+> ⟦ST imp=30.00|…|cat=⟨3ª voce⟩|sub=?|passo=sub⟧
 >
 > **Utente**: 5
 >
@@ -625,7 +681,8 @@ nomi letti da `read-categories`, tutti e senza parentesi.
    `passo` giusto?
 5. Se ho registrato: ho visto `OK:`, ho **cancellato il file di stato**, e c'è il
    numero di riga e il link?
-6. La domanda è una sola ed è chiusa?
+6. La domanda è una sola ed è chiusa? Se mi mancava solo la categoria, ho mandato
+   l'elenco invece di chiedere spiegazioni?
 7. È **un** messaggio, senza narrazione dei passaggi interni?
 
 ---
@@ -635,6 +692,9 @@ nomi letti da `read-categories`, tutti e senza parentesi.
 - **Mostrare o scrivere voci non lette in questo turno.** Sporca i dati in modo
   invisibile. Se l'output dice `[]`, quella categoria non ha sottocategorie e non
   si chiede niente.
+- **Rispondere "di cosa si tratta?", "per cosa?" o "è un'entrata o un'uscita?" a
+  un importo nudo.** "30 euro" ha già data e tipo (i default) e gli manca solo la
+  categoria: la risposta giusta è l'elenco numerato, in quello stesso turno.
 - **Rispondere "hai bisogno di qualcosa?" a un numero nudo.** Un "2" dopo un
   elenco è una scelta: il contesto sta nel file di stato.
 - **Rispondere a un messaggio breve senza il blocco di apertura.** Un "2" e un
