@@ -143,5 +143,6 @@ Le categorie senza sottocategorie elencate lasciano `--sottocategoria ""`.
 | Trasporto pubblico | Abbonamento · Biglietto singolo · Sharing · Altro |
 | Salute | Medicine · Visita specialistica · Analisi · Altro |
 | Cultura | *nessuna* |
+| Beneficienza | *nessuna* |
 
 Se una spesa auto non rientra in nessuna delle otto, non forzarla: presenta l'elenco all'utente e fallo scegliere.
