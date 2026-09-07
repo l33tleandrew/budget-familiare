@@ -32,7 +32,7 @@ Senza questi non si scrive:
 ## Flusso
 
 1. **Leggi la data odierna dal sistema** eseguendo `date +%d/%m/%Y` col tool `terminal`. Sempre, prima di interpretare il messaggio.
-2. **Interpreta** il messaggio ed estrai i campi. Se contiene già tutti i campi obbligatori, si chiede conferma e si va dritti al punto 4. I passaggi 2 e 3 esistono per l'incertezza reale.
+2. **Interpreta** il messaggio ed estrai i campi validando la coppia categoria/sottocategoria con la tassonomia. Se contiene già tutti i campi obbligatori, si chiede conferma e si va dritti al punto 4. I passaggi 2 e 3 esistono per l'incertezza reale.
 3. **Se `Categoria` non è determinabile con certezza**: presenta all'utente l'elenco **completo** delle categorie e fagli scegliere. Non proporre una rosa ristretta di 2-3.
 4. **Se la `Categoria` prevede sottocategorie e quella giusta non è determinabile con certezza**: presenta le sottocategorie di quella categoria e fagli scegliere. Non proporre una rosa ristretta di 2-3.
 5. **Mostra la riga completa e aspetta l'ok.** Sempre, senza eccezioni, anche quando tutto è ovvio.
