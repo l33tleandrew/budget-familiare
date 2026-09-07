@@ -21,20 +21,22 @@ Si registra **una transazione per messaggio**.
 
 Senza questi non si scrive:
 
-1. `Tipo` — `Entrata` o `Uscita` (default: `Uscita`)
-2. `Importo`
-3. `Categoria`
-4. `Sottocategoria` — **solo se la categoria ne prevede** (vedi tassonomia). Dove la categoria non ne ha, resta vuota.
+1. `Data` — (default: data odierna)
+2. `Tipo` — `Entrata` o `Uscita` (default: `Uscita`)
+3. `Importo`
+4. `Categoria` - (vedi tassonomia)
+5. `Sottocategoria` — **solo se la categoria ne prevede** (vedi tassonomia). Dove la categoria non ne ha, resta vuota.
 
 `Descrizione` e `Note` non sono obbligatori e **non vanno mai chiesti all'utente**.
 
 ## Flusso
 
-1. **Interpreta** il messaggio ed estrai i campi. Se contiene già tutti i campi obbligatori, si chiede conferma e si va dritti al punto 4. I passaggi 2 e 3 esistono per l'incertezza reale.
-2. **Se `Categoria` non è determinabile con certezza**: presenta all'utente l'elenco **completo** delle categorie e fagli scegliere. Non proporre una rosa ristretta di 2-3.
-3. **Se la `Categoria` prevede sottocategorie e quella giusta non è determinabile con certezza**: presenta le sottocategorie di quella categoria e fagli scegliere. Non proporre una rosa ristretta di 2-3.
-4. **Mostra la riga completa e aspetta l'ok.** Sempre, senza eccezioni, anche quando tutto è ovvio.
-5. **Scrivi** con `budget_sheets.py append` e riporta l'esito.
+1. **Leggi la data odierna dal sistema** eseguendo `date +%d/%m/%Y` col tool `terminal`. Sempre, prima di interpretare il messaggio.
+2. **Interpreta** il messaggio ed estrai i campi. Se contiene già tutti i campi obbligatori, si chiede conferma e si va dritti al punto 4. I passaggi 2 e 3 esistono per l'incertezza reale.
+3. **Se `Categoria` non è determinabile con certezza**: presenta all'utente l'elenco **completo** delle categorie e fagli scegliere. Non proporre una rosa ristretta di 2-3.
+4. **Se la `Categoria` prevede sottocategorie e quella giusta non è determinabile con certezza**: presenta le sottocategorie di quella categoria e fagli scegliere. Non proporre una rosa ristretta di 2-3.
+5. **Mostra la riga completa e aspetta l'ok.** Sempre, senza eccezioni, anche quando tutto è ovvio.
+6. **Scrivi** con `budget_sheets.py append` e riporta l'esito.
 
 
 ## Contesto tecnico
