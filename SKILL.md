@@ -23,7 +23,7 @@ Si registra **una transazione per messaggio**.
 
   Esegui: `bash date +%d/%m/%Y`
 
-2. **Interpreta il messaggio utente:**
+2. **Interpreta il messaggio utente ed estrapola le informazioni:**
    
   - Individua la `Data` (default: data odierna)
   - Deduci il `Tipo` (`Entrata`/`Uscita` default: `Uscita`)
@@ -35,19 +35,64 @@ Si registra **una transazione per messaggio**.
 
 3. **Valida Categoria e Sottocategoria**
 
-  Verifica che la coppia `Categoria` e `Sottocategoria` individuate esistano nella tassonomia e siano coerenti. Se la verifica va a buon fine salta allo step 6.
+  Verifica che la `Categoria` individuata esista nella tassonomia e che contenga la `Sottocategoria` individuata. Se la verifica va a buon fine salta allo step 6, altrimenti prosegui.
 
 4. **Mostra l'elenco delle categorie** 
 
-  Presenta all'utente l'elenco **completo** e numerato delle categorie e fallo scegliere.
+  Presenta all'utente l'elenco **completo** e numerato delle categorie presenti nella tassonomia e fallo scegliere. Esempio:
+  ```
+  In che categoria?
+  1. Stipendio
+  2. Supermercato
+  3. Cibo fuori / bevute
+  4. Auto / Moto
+  5. Sport
+  6. Casa
+  7. Abbigliamento
+  8. Abbonamenti
+  9. Divertimento
+  10. Investimento
+  11. Regali
+  12. Viaggi
+  13. Cura / Benessere
+  14. Trasporto pubblico
+  15. Salute
+  16. Cultura
+  17. Beneficienza
+  
+  Rispondi con il numero.
+  ```
 
-5. **Mostra l'elenco delle sottocategorie** 
+5. **Mostra l'elenco delle sottocategorie se previste** 
 
-  Se la `Categoria` scelta dall'utente prevede sottocategorie presenta all'utente l'elenco **completo** e numerato delle relative sottocategorie e fallo scegliere.
+  Se la `Categoria` scelta dall'utente possiede sottocategorie nella tassonomia (es. `Cibo fuori / bevute`), presenta all'utente l'elenco **completo** e numerato delle relative sottocategorie e fallo scegliere. Esempio:
+  ```
+  La categoria scelta è **Cibo fuori / bevute**. In che sottocategoria?
+  1. Asporto
+  2. Bar
+  3. Da amici
+  4. Fast food
+  5. Ristorante
+  6. Bevuta
+  7. Altro
+  
+  Rispondi con il numero.
+  ```
 
 6. **Riepiloga e chiedi conferma all'utente** 
 
-  Mostra il riepilogo delle informazioni e aspetta l'ok. Sempre, senza eccezioni, anche quando tutto è ovvio.
+  Mostra il riepilogo delle informazioni ottenute e aspetta conferma. Sempre, senza eccezioni, anche quando tutto è ovvio. Esempio:
+  ```
+  Importo:        30.00 €
+  Data:           01/09/2026
+  Tipo:           Uscita
+  Categoria:      Cibo fuori / bevute
+  Sottocategoria: Ristorante
+  Descrizione:    Trattoria da Nino, cena con Marco
+  Note:           —
+  
+  Confermo?
+  ```
 
 7. **Scrivi la transazione sul foglio e riporta l'esito**
 
