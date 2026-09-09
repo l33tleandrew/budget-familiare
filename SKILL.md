@@ -32,8 +32,8 @@ Si registra **una transazione per messaggio**.
    1. Individua la `Data` (default: data odierna)
    2. Deduci il `Tipo` (`Entrata`/`Uscita` default: `Uscita`)
    3. Leggi l' `Importo`
-   4. Individua la `Categoria` - (vedi tassonomia)
-   5. Individua la `Sottocategoria` usando la `Categoria` individuata **solo se questa ne prevede** (vedi tassonomia) altrimenti resta vuota.
+   4. Individua la `Categoria` - (vedi `references/tassonomia.yaml`)
+   5. Individua la `Sottocategoria` usando la `Categoria` individuata **solo se questa ne prevede** (vedi `references/tassonomia.yaml`) altrimenti resta vuota.
    6. Formula una `Descrizione` sintetica
    7. `Note` rimane vuota
 
@@ -122,7 +122,7 @@ segnalazione. I formati qui sotto vanno rispettati alla lettera.
 | `--data` | `gg/mm/aaaa` | oggi, letta dal sistema | `01/09/2026` |
 | `--tipo` | `Entrata` o `Uscita` | `Uscita` | `Uscita` |
 | `--importo` | positivo, punto decimale, senza valuta | nessuno: obbligatorio | `40.30` |
-| `--categoria` | stringa esatta da `tassonomia.yaml` | nessuno | `Cibo fuori / bevute` |
+| `--categoria` | stringa esatta da `references/tassonomia.yaml` | nessuno | `Cibo fuori / bevute` |
 | `--sottocategoria` | stringa esatta, `""` se la categoria non ne prevede | `""` | `Ristorante` |
 | `--descrizione` | testo libero | `""` | `Trattoria da Nino, cena con Marco` |
 | `--note` | sempre `""` | `""` | `""` |
@@ -155,13 +155,13 @@ dedurlo dal contesto.
  
 `Uscita` salvo indicazione contraria esplicita (incasso, rimborso, stipendio, accredito,
 regalo ricevuto). Le entrate non sono solo lo stipendio: il tipo lo stabilisce la
-categoria scelta, non l'intuizione. Ogni categoria in `tassonomia.yaml` dichiara il
+categoria scelta, non l'intuizione. Ogni categoria in `references/tassonomia.yaml` dichiara il
 proprio `tipo`, e `--tipo` deve essere coerente con quello: se non lo è, l'inferenza è
 sbagliata da qualche parte e va rifatta, non forzata.
  
 ### `--categoria` e `--sottocategoria`
  
-Tassonomia chiusa: `tassonomia.yaml` è l'unica fonte, e i valori si copiano carattere per
+Tassonomia chiusa: `references/tassonomia.yaml` è l'unica fonte, e i valori si copiano carattere per
 carattere. Mai inventarne di nuovi, mai tradurre, abbreviare, correggere la punteggiatura
 o normalizzare le maiuscole.
  
