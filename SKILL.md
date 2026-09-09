@@ -19,172 +19,163 @@ Si registra **una transazione per messaggio**.
 
 ## Flusso
 
-1. **Leggi la data odierna dal sistema:** 
+1. **Leggi la data odierna dal sistema:**
 
-  Esegui: `bash date +%d/%m/%Y`
+   Esegui: `bash date +%d/%m/%Y`
 
 2. **Interpreta il messaggio utente ed estrapola le informazioni:**
-   
-  - Individua la `Data` (default: data odierna)
-  - Deduci il `Tipo` (`Entrata`/`Uscita` default: `Uscita`)
-  - Leggi l' `Importo`
-  - Individua la `Categoria` - (vedi tassonomia)
-  - Individua la `Sottocategoria` usando la `Categoria` individuata **solo se questa ne prevede** (vedi tassonomia) altrimenti resta vuota.
-  - Formula una `Descrizione` sintetica
-  - `Note` rimane vuota
+
+   1. Individua la `Data` (default: data odierna)
+   2. Deduci il `Tipo` (`Entrata`/`Uscita` default: `Uscita`)
+   3. Leggi l' `Importo`
+   4. Individua la `Categoria` - (vedi tassonomia)
+   5. Individua la `Sottocategoria` usando la `Categoria` individuata **solo se questa ne prevede** (vedi tassonomia) altrimenti resta vuota.
+   6. Formula una `Descrizione` sintetica
+   7. `Note` rimane vuota
 
 3. **Valida Categoria e Sottocategoria**
 
-  Verifica che la `Categoria` individuata esista nella tassonomia e che contenga la `Sottocategoria` individuata. Se la verifica va a buon fine salta allo step 6, altrimenti prosegui.
+   Verifica che la `Categoria` individuata esista nella tassonomia e che contenga la `Sottocategoria` individuata. Se la verifica va a buon fine salta allo step 6, altrimenti prosegui.
 
-4. **Mostra l'elenco delle categorie** 
+4. **Mostra l'elenco delle categorie**
 
-  Presenta all'utente l'elenco **completo** e numerato delle categorie presenti nella tassonomia e fallo scegliere. Esempio:
-  ```
-  In che categoria?
-  1. Stipendio
-  2. Supermercato
-  3. Cibo fuori / bevute
-  4. Auto / Moto
-  5. Sport
-  6. Casa
-  7. Abbigliamento
-  8. Abbonamenti
-  9. Divertimento
-  10. Investimento
-  11. Regali
-  12. Viaggi
-  13. Cura / Benessere
-  14. Trasporto pubblico
-  15. Salute
-  16. Cultura
-  17. Beneficienza
-  
-  Rispondi con il numero.
-  ```
+   Presenta all'utente l'elenco **completo** e numerato delle categorie presenti nella tassonomia e fallo scegliere. Esempio:
+   ```
+   In che categoria?
+   1. Stipendio
+   2. Supermercato
+   3. Cibo fuori / bevute
+   4. Auto / Moto
+   5. Sport
+   6. Casa
+   7. Abbigliamento
+   8. Abbonamenti
+   9. Divertimento
+   10. Investimento
+   11. Regali
+   12. Viaggi
+   13. Cura / Benessere
+   14. Trasporto pubblico
+   15. Salute
+   16. Cultura
+   17. Beneficienza
+   
+   Rispondi con il numero.
+   ```
 
-5. **Mostra l'elenco delle sottocategorie se previste** 
+5. **Mostra l'elenco delle sottocategorie se previste**
 
-  Se la `Categoria` scelta dall'utente possiede sottocategorie nella tassonomia (es. `Cibo fuori / bevute`), presenta all'utente l'elenco **completo** e numerato delle relative sottocategorie e fallo scegliere. Esempio:
-  ```
-  La categoria scelta è **Cibo fuori / bevute**. In che sottocategoria?
-  1. Asporto
-  2. Bar
-  3. Da amici
-  4. Fast food
-  5. Ristorante
-  6. Bevuta
-  7. Altro
-  
-  Rispondi con il numero.
-  ```
+   Se la `Categoria` scelta dall'utente possiede sottocategorie nella tassonomia (es. `Cibo fuori / bevute`), presenta all'utente l'elenco **completo** e numerato delle relative sottocategorie e fallo scegliere. Esempio:
+   ```
+   La categoria scelta è Cibo fuori / bevute. In che sottocategoria?
+   1. Asporto
+   2. Bar
+   3. Da amici
+   4. Fast food
+   5. Ristorante
+   6. Bevuta
+   7. Altro
+   
+   Rispondi con il numero.
+   ```
 
-6. **Riepiloga e chiedi conferma all'utente** 
+6. **Riepiloga e chiedi conferma all'utente**
 
-  Mostra il riepilogo delle informazioni ottenute e aspetta conferma. Sempre, senza eccezioni, anche quando tutto è ovvio. Esempio:
-  ```
-  Importo:        30.00 €
-  Data:           01/09/2026
-  Tipo:           Uscita
-  Categoria:      Cibo fuori / bevute
-  Sottocategoria: Ristorante
-  Descrizione:    Trattoria da Nino, cena con Marco
-  Note:           —
-  
-  Confermo?
-  ```
+   Mostra il riepilogo delle informazioni ottenute e aspetta conferma. Sempre, senza eccezioni, anche quando tutto è ovvio. Esempio:
+   ```
+   Importo:        30.00 €
+   Data:           01/09/2026
+   Tipo:           Uscita
+   Categoria:      Cibo fuori / bevute
+   Sottocategoria: Ristorante
+   Descrizione:    Trattoria da Nino, cena con Marco
+   Note:           —
+   
+   Confermo?
+   ```
 
-7. **Scrivi la transazione sul foglio e riporta l'esito**
+7. **Scrivi la transazione sul foglio e riporta l'esito e il numero di riga all'utente**
 
-  Usa i dati confermati e lo script `budget_sheets.py` per aggiungere la transazione sul file Google Sheet.
-  
-  Esempio: 
-  ```bash
-    /opt/hermes/.venv/bin/python /opt/data/profiles/budgetingagent/scripts/budget_sheets.py append \
-    --data "01/09/2026" \
-    --tipo "Uscita" \
-    --categoria "Cibo fuori / bevute" \
-    --sottocategoria "Ristorante" \
-    --importo 30.00 \
-    --descrizione "Trattoria da Nino, cena con Marco" \
-    --note ""
-  ```
+   Usa i dati confermati e lo script `budget_sheets.py` per aggiungere la transazione sul file Google Sheet. Le categorie senza sottocategorie elencate lasciano `--sottocategoria ""`. Esempio: 
+   ```bash
+   /opt/hermes/.venv/bin/python /opt/data/profiles/budgetingagent/scripts/budget_sheets.py append \
+   --data "01/09/2026" \
+   --tipo "Uscita" \
+   --categoria "Cibo fuori / bevute" \
+   --sottocategoria "Ristorante" \
+   --importo 30.00 \
+   --descrizione "Trattoria da Nino, cena con Marco" \
+   --note ""
+   ```
 
-## Regole di classificazione
-
-**Tassonomia chiusa.** Scegli solo tra le voci elencate più sotto. Non inventare categorie né sottocategorie. Se una transazione non trova casa, **dillo all'utente** invece di forzarla in "Altro": è così che emergono le voci mancanti.
-
-**Entrate.** Non sono limitate a `Stipendio`. Oltre ai rimborsi, sono entrate anche `Investimento > Plusvalenza`, `Dividendi`, `Interessi maturati`.
-
-**Valuta.** Il foglio è in euro e l'utente fornisce già l'importo convertito. Non fare conversioni di cambio.
-
-**Tipo.** In assenza di indicazioni contrarie, una transazione è un'`Uscita`. Trattala come `Entrata` solo se il messaggio lo indica (incasso, rimborso, stipendio, regalo ricevuto).
-
-## Formati
-
-Vanno rispettati alla lettera: lo script non valida nulla e un errore di formato passa silenziosamente nel foglio.
-
-| Campo | Formato | Esempio |
+## Campi
+ 
+`budget_sheets.py` non valida nulla: un errore di formato finisce sul foglio senza
+segnalazione. I formati qui sotto vanno rispettati alla lettera.
+ 
+| Campo | Formato | Default | Esempio |
+|---|---|---|---|
+| `--data` | `gg/mm/aaaa` | oggi, letta dal sistema | `01/09/2026` |
+| `--tipo` | `Entrata` o `Uscita` | `Uscita` | `Uscita` |
+| `--importo` | positivo, punto decimale, senza valuta | nessuno: obbligatorio | `40.30` |
+| `--categoria` | stringa esatta da `tassonomia.yaml` | nessuno | `Cibo fuori / bevute` |
+| `--sottocategoria` | stringa esatta, `""` se la categoria non ne prevede | `""` | `Ristorante` |
+| `--descrizione` | testo libero | `""` | `Trattoria da Nino, cena con Marco` |
+| `--note` | sempre `""` | `""` | `""` |
+ 
+### `--data`
+ 
+Leggila dal sistema con `date +%d/%m/%Y`, mai dalla memoria. Se il messaggio indica un
+momento passato ("ieri", "lunedì scorso", "il 12"), risolvilo con `date -d` a partire da
+oggi invece di calcolarlo a mente: `date -d yesterday`, `date -d 'last monday'`,
+`date -d '2026-09-12'`. Su una foto di scontrino vince la data stampata sullo scontrino,
+se leggibile.
+ 
+### `--importo`
+ 
+Sempre positivo: il segno lo porta `--tipo`, non il numero. `-40.30` e "meno 40" si
+registrano come `40.30` con `--tipo Uscita`.
+ 
+| Nel messaggio | Regola | Sul foglio |
 |---|---|---|
-| `--data` | `gg/mm/aaaa` | `01/09/2026` |
-| `--tipo` | `Entrata` o `Uscita` | `Uscita` |
-| `--importo` | numero **positivo**, punto decimale | `40.30` (mai `40,30`, mai `-40.30`) |
-| `--categoria` | esatta come in tassonomia | `Cibo fuori / bevute` |
-| `--sottocategoria` | esatta, o `""` se non prevista | `Ristorante` |
-| `--descrizione` | testo libero, o `""` | `Trattoria da Nino, cena con Marco` |
-| `--note` | **sempre** `""` | `""` |
-
-**Data.** Se il messaggio non indica quando, usa **oggi** — e prendila dal sistema con `date +%d/%m/%Y`, mai dalla memoria. Se indica un momento passato ("ieri", "lunedì scorso", "il 12"), calcola quella data partendo dalla data di oggi. Su una foto di scontrino, usa la data stampata sullo scontrino se leggibile.
-
-**Importo.** Sempre positivo: il segno lo porta la colonna `Tipo`, non il numero. La virgola italiana è sempre decimale (`12,50` → `12.50`); un punto seguito da tre cifre sono migliaia (`1.500` → `1500.00`), da una o due cifre è decimale (`12.50` → `12.50`).
-
-## Descrizione
-
-Componila con quello che c'è nel messaggio, senza mai chiedere altro. Mettici, quando disponibili: il posto o il negozio, il viaggio o l'occasione, cosa è stato comprato, con chi, e qualunque contesto utile a riconoscere la spesa tra sei mesi.
-
-Se il messaggio non contiene nulla di tutto questo, **lasciala vuota**. Non riempirla ripetendo la categoria: è informazione già presente nella colonna accanto.
-
-La descrizione è particolarmente importante sulle spese di viaggio: dato che tutte finiscono sotto `Viaggi`, è l'unico posto dove sopravvive l'informazione di *quale* viaggio fosse. Se l'utente nomina la destinazione, mettila lì.
-
-## Comando
-
-```bash
-/opt/hermes/.venv/bin/python /opt/data/profiles/budgetingagent/scripts/budget_sheets.py append \
-  --data "01/09/2026" \
-  --tipo "Uscita" \
-  --categoria "Cibo fuori / bevute" \
-  --sottocategoria "Ristorante" \
-  --importo 30.00 \
-  --descrizione "Trattoria da Nino, cena con Marco" \
-  --note ""
-```
-
-**Quoting.** Campi liberi sempre fra virgolette doppie. Da descrizione e note togli prima i caratteri `"`, `` ` ``, `$` e `\`, che romperebbero il comando; gli apostrofi vanno benissimo, l'italiano ne è pieno. Sottocategoria assente = `""`.
-
-**Successo.** Lo script stampa `OK:` seguito dall'intervallo aggiornato, per esempio `OK:Transazioni 2026!A42:G42`. Riporta all'utente il numero di riga in una riga sola: gli permette di correggere a mano in tre secondi.
-
-**Se l'output non inizia con `OK:`, non dire che hai registrato.** Riprova **una volta sola**, poi fermati e mostra all'utente il comando completo già pronto, così può lanciarlo lui. Una precisazione che conta: un errore di autenticazione (`ERRORE autenticazione`) avviene *prima* di qualunque scrittura, quindi ritentare è sicuro. Se invece l'errore arriva dopo la chiamata a Google e non capisci se la riga sia passata o no, **non ritentare**: fai controllare il foglio, perché un secondo append creerebbe un duplicato che nessuno noterà più.
-
-## Tassonomia
-
-Le categorie senza sottocategorie elencate lasciano `--sottocategoria ""`.
-
-| Categoria | Sottocategorie |
-|---|---|
-| Stipendio | *nessuna* |
-| Supermercato | *nessuna* |
-| Cibo fuori / bevute | Asporto · Bar · Da amici · Fast food · Ristorante · Bevuta · Altro |
-| Auto / Moto | Benzina · Bollo · Assicurazione · Parcheggio · Pedaggio · Autolavaggio · Riparazione · Multa |
-| Sport | Palestra · Piscina · Padel · Altro |
-| Casa | Rata condominiale · Bolletta Internet · Bolletta elettrica · Rata mutuo · TARI · Manutenzione/Riparazione · Oggettistica · Altro |
-| Abbigliamento | *nessuna* |
-| Abbonamenti | Spotify · Amazon Prime · Disney Plus · Netflix · Altro |
-| Divertimento | *nessuna* |
-| Investimento | Tasse · PAC · Plusvalenza · Minusvalenza · Interessi maturati · Commissioni · Dividendi · Altro |
-| Regali | Compleanno · Natale · Anniversario · San Valentino · Matrimonio · Altro |
-| Viaggi | Voli · Alloggio · Cibo fuori · Supermercato · Mezzi pubblici · Auto · Divertimento · Altro |
-| Cura / Benessere | Taglio capelli · Estetista · Altro |
-| Trasporto pubblico | Abbonamento · Biglietto singolo · Sharing · Altro |
-| Salute | Medicine · Visita specialistica · Analisi · Altro |
-| Cultura | *nessuna* |
-| Beneficienza | *nessuna* |
+| `12,50` | la virgola italiana è sempre decimale | `12.50` |
+| `1.500` | punto seguito da 3 cifre: migliaia | `1500.00` |
+| `12.50` | punto seguito da 1 o 2 cifre: decimale | `12.50` |
+| `1.200,00` | entrambi i separatori: l'ultimo è il decimale | `1200.00` |
+ 
+Il foglio è in euro e l'utente fornisce l'importo già convertito: nessuna conversione di
+cambio, in nessun caso. Se nel messaggio non c'è un importo, chiedilo e fermati: non
+dedurlo dal contesto.
+ 
+### `--tipo`
+ 
+`Uscita` salvo indicazione contraria esplicita (incasso, rimborso, stipendio, accredito,
+regalo ricevuto). Le entrate non sono solo lo stipendio: il tipo lo stabilisce la
+categoria scelta, non l'intuizione. Ogni categoria in `tassonomia.yaml` dichiara il
+proprio `tipo`, e `--tipo` deve essere coerente con quello: se non lo è, l'inferenza è
+sbagliata da qualche parte e va rifatta, non forzata.
+ 
+### `--categoria` e `--sottocategoria`
+ 
+Tassonomia chiusa: `tassonomia.yaml` è l'unica fonte, e i valori si copiano carattere per
+carattere. Mai inventarne di nuovi, mai tradurre, abbreviare, correggere la punteggiatura
+o normalizzare le maiuscole.
+ 
+`--sottocategoria ""` significa una cosa sola: la categoria non ne prevede. Non è il
+valore da usare quando non sai quale scegliere — in quel caso mostra l'elenco.
+ 
+### `--descrizione`
+ 
+Componila con quello che c'è nel messaggio, senza mai chiedere altro. Mettici, quando
+disponibili: il posto o il negozio, il viaggio o l'occasione, cosa è stato comprato, con
+chi, e qualunque contesto utile a riconoscere la spesa fra sei mesi.
+ 
+Se il messaggio non contiene nulla di tutto questo, lasciala vuota. Non riempirla
+ripetendo la categoria: è informazione già presente nella colonna accanto.
+ 
+### Quoting
+ 
+Campi liberi sempre fra virgolette doppie, anche quando sono vuoti; `--importo` senza
+virgolette. Da descrizione e note togli prima i caratteri `"`, `` ` ``, `$` e `\`, che
+romperebbero il comando. Gli apostrofi vanno benissimo, l'italiano ne è pieno.
+ 
