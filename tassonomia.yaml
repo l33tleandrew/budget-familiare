@@ -112,7 +112,7 @@ categorie:
       - nome: "Divertimento"
       - nome: "Altro"
 
-  - nome: "Cura / Benesere"
+  - nome: "Cura / Benessere"
     tipo: uscita
     sottocategorie:
       - nome: "Taglio capelli"
