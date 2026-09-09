@@ -1,0 +1,144 @@
+# Tassonomia delle categorie di budget.
+#
+# Schema di ogni categoria:
+#   nome            stringa canonica, identica a quella scritta sul foglio (obbligatoria)
+#   tipo            uscita | entrata | entrambi (default: uscita)
+#   sottocategorie  lista, SEMPRE presente: [] se la categoria non ne prevede
+#
+
+version: 1
+aggiornata: 2026-09-09
+
+categorie:
+  - nome: "Stipendio"
+    tipo: entrata
+    sottocategorie: []
+
+  - nome: "Supermercato"
+    tipo: uscita
+    sottocategorie: []
+
+  - nome: "Cibo fuori / bevute"
+    tipo: uscita
+    sottocategorie:
+      - nome: "Asporto"
+      - nome: "Bar"
+      - nome: "Da amici"
+      - nome: "Fast food"
+      - nome: "Ristorante"
+      - nome: "Bevuta"
+      - nome: "Altro"
+
+  - nome: "Auto / Moto"
+    tipo: uscita
+    sottocategorie:
+      - nome: "Benzina"
+      - nome: "Assicurazione"
+      - nome: "Bollo"
+      - nome: "Parcheggio"
+      - nome: "Pedaggio"
+      - nome: "Autolavaggio"
+      - nome: "Riparazione"
+      - nome: "Multa"
+
+  - nome: "Sport"
+    tipo: uscita
+    sottocategorie:
+      - nome: "Palestra"
+      - nome: "Piscina"
+      - nome: "Padel"
+      - nome: "Altro"
+
+  - nome: "Casa"
+    tipo: uscita
+    sottocategorie:
+      - nome: "Rata condominiale"
+      - nome: "Bolletta Internet"
+      - nome: "Bolletta elettrica"
+      - nome: "Rata mutuo"
+      - nome: "TARI"
+      - nome: "Manutenzione/Riparazione"
+      - nome: "Oggettistica"
+      - nome: "Altro"
+
+  - nome: "Abbigliamento"
+    tipo: uscita
+    sottocategorie: []
+
+  - nome: "Abbonamenti"
+    tipo: uscita
+    sottocategorie:
+      - nome: "Spotify"
+      - nome: "Amazon Prime"
+      - nome: "Disney Plus"
+      - nome: "Netflix"
+      - nome: "Altro"
+
+  - nome: "Divertimento"
+    tipo: uscita
+    sottocategorie: []
+
+  - nome: "Investimento"
+    tipo: entrambi
+    sottocategorie:
+      - nome: "Tasse"
+      - nome: "PAC"
+      - nome: "Plusvalenza"
+      - nome: "Minusvalenza"
+      - nome: "Interessi maturati"
+      - nome: "Commissioni"
+      - nome: "Dividendi"
+      - nome: "Altro"
+
+  - nome: "Regali"
+    tipo: uscita
+    sottocategorie:
+      - nome: "Compleanno"
+      - nome: "Natale"
+      - nome: "Anniversario"
+      - nome: "San Valentino"
+      - nome: "Matrimonio"
+      - nome: "Altro"
+
+  - nome: "Viaggi"
+    tipo: uscita
+    sottocategorie:
+      - nome: "Voli"
+      - nome: "Alloggio"
+      - nome: "Cibo fuori"
+      - nome: "Supermercato"
+      - nome: "Mezzi pubblici"
+      - nome: "Auto"
+      - nome: "Divertimento"
+      - nome: "Altro"
+
+  - nome: "Cura / Benesere"
+    tipo: uscita
+    sottocategorie:
+      - nome: "Taglio capelli"
+      - nome: "Estetista"
+      - nome: "Altro"
+
+  - nome: "Trasporto pubblico"
+    tipo: uscita
+    sottocategorie:
+      - nome: "Abbonamento"
+      - nome: "Biglietto singolo"
+      - nome: "Sharing"
+      - nome: "Altro"
+
+  - nome: "Salute"
+    tipo: uscita
+    sottocategorie:
+      - nome: "Medicine"
+      - nome: "Visita specialistica"
+      - nome: "Analisi"
+      - nome: "Altro"  
+
+  - nome: "Cultura"
+    tipo: uscita
+    sottocategorie: []
+
+  - nome: "Beneficienza"
+    tipo: uscita
+    sottocategorie: []
