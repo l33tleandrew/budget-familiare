@@ -5,7 +5,7 @@ description: Registra una transazione economica (spesa o entrata) nel foglio Bud
 
 # Registra transazione nel foglio Budget
 
-Trasforma un messaggio informale in una riga del foglio `Transazioni 2026`, passando per una conferma esplicita dell'utente.
+Trasforma un messaggio informale in una riga del foglio delle transazioni dell'anno di `--data`, che `budget_sheets.py` seleziona da solo, passando per una conferma esplicita dell'utente. 
 
 ## Quando si attiva
 
@@ -69,7 +69,7 @@ Si registra **una transazione per messaggio**.
 
 5. **Mostra l'elenco delle sottocategorie se previste**
 
-   Se la `Categoria` scelta dall'utente possiede sottocategorie nella tassonomia (es. `Cibo fuori / bevute`), presenta all'utente l'elenco **completo** e numerato delle relative sottocategorie e fallo scegliere. Esempio:
+   Elenca **tutte** le relative sottocategorie di `references/tassonomia.yaml`, nell'ordine in cui compaiono nel file, numerate da 1, e chiudi con "Rispondi con il numero.". Esempio:
    ```
    La categoria scelta è Cibo fuori / bevute. In che sottocategoria?
    1. Asporto
@@ -131,8 +131,8 @@ segnalazione. I formati qui sotto vanno rispettati alla lettera.
  
 Leggila dal sistema con `date +%d/%m/%Y`, mai dalla memoria. Se il messaggio indica un
 momento passato ("ieri", "lunedì scorso", "il 12"), risolvilo con `date -d` a partire da
-oggi invece di calcolarlo a mente: `date -d yesterday`, `date -d 'last monday'`,
-`date -d '2026-09-12'`. Su una foto di scontrino vince la data stampata sullo scontrino,
+oggi invece di calcolarlo a mente: `date -d yesterday +%d/%m/%Y`, `date -d 'last monday +%d/%m/%Y'`,
+`date -d '2026-09-12 +%d/%m/%Y'`. Su una foto di scontrino vince la data stampata sullo scontrino,
 se leggibile.
  
 ### `--importo`
