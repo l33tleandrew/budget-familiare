@@ -43,7 +43,7 @@ Si registra **una transazione per messaggio**.
 
 4. **Mostra l'elenco delle categorie**
 
-   Presenta all'utente l'elenco **completo** e numerato delle categorie presenti nella tassonomia e fallo scegliere. Esempio:
+   Elenca **tutte** le categorie di `references/tassonomia.yaml`, nell'ordine in cui compaiono nel file, numerate da 1, e chiudi con "Rispondi con il numero.". Esempio:
    ```
    In che categoria?
    1. Stipendio
