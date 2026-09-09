@@ -19,6 +19,10 @@ Si registra **una transazione per messaggio**.
 
 ## Flusso
 
+0. **Carica la tassonomia**
+
+   Leggi `references/tassonomia.yaml`. È l'unica fonte per categorie, sottocategorie e per il `tipo` di ciascuna categoria. Non procedere a memoria: le categorie cambiano nel tempo e il file vince sempre.
+
 1. **Leggi la data odierna dal sistema:**
 
    Esegui: `bash date +%d/%m/%Y`
