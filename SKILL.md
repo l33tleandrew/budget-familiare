@@ -21,7 +21,7 @@ Si registra **una transazione per messaggio**.
 
 0. **Carica la tassonomia**
 
-   Leggi `references/tassonomia.yaml`. È l'unica fonte per categorie, sottocategorie e per il `tipo` di ciascuna categoria. Non procedere a memoria: le categorie cambiano nel tempo e il file vince sempre.
+   Leggi per intero `references/tassonomia.yaml`, accanto a questo SKILL.md. È l'unica fonte per categorie, sottocategorie e per il `tipo` di ciascuna categoria. Non procedere a memoria: le categorie cambiano nel tempo e il file vince sempre.
 
 1. **Leggi la data odierna dal sistema:**
 
