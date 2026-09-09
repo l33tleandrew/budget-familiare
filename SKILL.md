@@ -25,7 +25,7 @@ Si registra **una transazione per messaggio**.
 
 1. **Leggi la data odierna dal sistema:**
 
-   Esegui: `bash date +%d/%m/%Y`
+   Esegui: `date +%d/%m/%Y`
 
 2. **Interpreta il messaggio utente ed estrapola le informazioni:**
 
@@ -69,7 +69,7 @@ Si registra **una transazione per messaggio**.
 
 5. **Mostra l'elenco delle sottocategorie se previste**
 
-   Elenca **tutte** le relative sottocategorie di `references/tassonomia.yaml`, nell'ordine in cui compaiono nel file, numerate da 1, e chiudi con "Rispondi con il numero.". Esempio:
+   Se la categoria scelta non prevede sottocategorie nella tassonomia, lascia `--sottocategoria ""` e vai allo step 6. Altrimenti elenca **tutte** le relative sottocategorie di `references/tassonomia.yaml`, nell'ordine in cui compaiono nel file, numerate da 1, e chiudi con "Rispondi con il numero.". Esempio:
    ```
    La categoria scelta è Cibo fuori / bevute. In che sottocategoria?
    1. Asporto
@@ -131,8 +131,8 @@ segnalazione. I formati qui sotto vanno rispettati alla lettera.
  
 Leggila dal sistema con `date +%d/%m/%Y`, mai dalla memoria. Se il messaggio indica un
 momento passato ("ieri", "lunedì scorso", "il 12"), risolvilo con `date -d` a partire da
-oggi invece di calcolarlo a mente: `date -d yesterday +%d/%m/%Y`, `date -d 'last monday +%d/%m/%Y'`,
-`date -d '2026-09-12 +%d/%m/%Y'`. Su una foto di scontrino vince la data stampata sullo scontrino,
+oggi invece di calcolarlo a mente: `date -d yesterday +%d/%m/%Y`, `date -d 'last monday' +%d/%m/%Y`,
+`date -d '2026-09-12' +%d/%m/%Y`. Su una foto di scontrino vince la data stampata sullo scontrino,
 se leggibile.
  
 ### `--importo`
