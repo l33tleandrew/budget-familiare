@@ -17,50 +17,53 @@ Su **qualunque** messaggio che sembri descrivere una transazione, senza bisogno 
 
 Si registra **una transazione per messaggio**.
 
-## Campi obbligatori
-
-Senza questi non si scrive:
-
-1. `Data` — (default: data odierna)
-2. `Tipo` — `Entrata` o `Uscita` (default: `Uscita`)
-3. `Importo`
-4. `Categoria` - (vedi tassonomia)
-5. `Sottocategoria` — **solo se la categoria ne prevede** (vedi tassonomia). Dove la categoria non ne ha, resta vuota.
-
-`Descrizione` e `Note` non sono obbligatori e **non vanno mai chiesti all'utente**.
-
 ## Flusso
 
-1. **Leggi la data odierna dal sistema** eseguendo `date +%d/%m/%Y` col tool `terminal`. Sempre, prima di interpretare il messaggio.
-2. **Interpreta** il messaggio ed estrai i campi validando la coppia categoria/sottocategoria con la tassonomia. Se contiene già tutti i campi obbligatori, si chiede conferma e si va dritti al punto 4. I passaggi 2 e 3 esistono per l'incertezza reale.
-3. **Se `Categoria` non è determinabile con certezza**: presenta all'utente l'elenco **completo** delle categorie e fagli scegliere. Non proporre una rosa ristretta di 2-3.
-4. **Se la `Categoria` prevede sottocategorie e quella giusta non è determinabile con certezza**: presenta le sottocategorie di quella categoria e fagli scegliere. Non proporre una rosa ristretta di 2-3.
-5. **Mostra la riga completa e aspetta l'ok.** Sempre, senza eccezioni, anche quando tutto è ovvio.
-6. **Scrivi** con `budget_sheets.py append` e riporta l'esito.
+1. **Leggi la data odierna dal sistema:** 
 
+  Esegui: `bash date +%d/%m/%Y`
 
-## Contesto tecnico
+2. **Interpreta il messaggio utente:**
+   
+  - Individua la `Data` (default: data odierna)
+  - Deduci il `Tipo` (`Entrata`/`Uscita` default: `Uscita`)
+  - Leggi l' `Importo`
+  - Individua la `Categoria` - (vedi tassonomia)
+  - Individua la `Sottocategoria` usando la `Categoria` individuata **solo se questa ne prevede** (vedi tassonomia) altrimenti resta vuota.
+  - Formula una `Descrizione` sintetica
+  - `Note` rimane vuota
 
-Tutte le coordinate per scrivere davvero sul foglio.
+3. **Valida Categoria e Sottocategoria**
 
-| | |
-|---|---|
-| **Interprete Python** | `/opt/hermes/.venv/bin/python` |
-| **Script** | `/opt/data/profiles/budgetingagent/scripts/budget_sheets.py` |
-| **Cartella profilo** | `/opt/data/profiles/budgetingagent` |
-| **Token OAuth** | `/opt/data/profiles/budgetingagent/google_token.json` |
-| **Client secret** | `/opt/data/profiles/budgetingagent/google_client_secret.json` |
-| **Spreadsheet ID** | `1iDYzjzyu_du_axBmzOzI6k4DrzV2Y52_UZTFMtM6JB0` |
-| **Foglio target** | `Transazioni 2026` (sheet ID `1689336980`) |
-| **Foglio categorie** | `Categorie` (colonna A = categoria, colonna B = sottocategoria) |
-| **Colonne, in quest'ordine** | `Data \| Tipo \| Categoria \| Sottocategoria \| Importo (€) \| Descrizione \| Note` |
-| **Link al foglio** | `https://docs.google.com/spreadsheets/d/1iDYzjzyu_du_axBmzOzI6k4DrzV2Y52_UZTFMtM6JB0/edit` |
+  Verifica che la coppia `Categoria` e `Sottocategoria` individuate esistano nella tassonomia e siano coerenti. Se la verifica va a buon fine salta allo step 6.
 
-Le credenziali le gestisce lo script da solo: rinfresca l'access token partendo dal refresh token e non richiede nessun intervento. Non leggere né scrivere quei due file a mano.
+4. **Mostra l'elenco delle categorie** 
 
-Lo script espone **solo** `append` e `read-categories`. Non può leggere le transazioni già registrate: a domande come "quanto ho speso a settembre?" non rispondere con cifre — non le hai, e stimarle è peggio di non rispondere. Passa la palla al foglio con il link qui sopra.
+  Presenta all'utente l'elenco **completo** e numerato delle categorie e fallo scegliere.
 
-`append` scrive sempre in fondo e non modifica mai righe esistenti. Una riga sbagliata si corregge solo a mano nel foglio: per questo la conferma prima di scrivere non è opzionale.
+5. **Mostra l'elenco delle sottocategorie** 
+
+  Se la `Categoria` scelta dall'utente prevede sottocategorie presenta all'utente l'elenco **completo** e numerato delle relative sottocategorie e fallo scegliere.
+
+6. **Riepiloga e chiedi conferma all'utente** 
+
+  Mostra il riepilogo delle informazioni e aspetta l'ok. Sempre, senza eccezioni, anche quando tutto è ovvio.
+
+7. **Scrivi la transazione sul foglio e riporta l'esito**
+
+  Usa i dati confermati e lo script `budget_sheets.py` per aggiungere la transazione sul file Google Sheet.
+  
+  Esempio: 
+  ```bash
+    /opt/hermes/.venv/bin/python /opt/data/profiles/budgetingagent/scripts/budget_sheets.py append \
+    --data "01/09/2026" \
+    --tipo "Uscita" \
+    --categoria "Cibo fuori / bevute" \
+    --sottocategoria "Ristorante" \
+    --importo 30.00 \
+    --descrizione "Trattoria da Nino, cena con Marco" \
+    --note ""
+  ```
 
 ## Regole di classificazione
 
@@ -117,12 +120,6 @@ La descrizione è particolarmente importante sulle spese di viaggio: dato che tu
 
 **Se l'output non inizia con `OK:`, non dire che hai registrato.** Riprova **una volta sola**, poi fermati e mostra all'utente il comando completo già pronto, così può lanciarlo lui. Una precisazione che conta: un errore di autenticazione (`ERRORE autenticazione`) avviene *prima* di qualunque scrittura, quindi ritentare è sicuro. Se invece l'errore arriva dopo la chiamata a Google e non capisci se la riga sia passata o no, **non ritentare**: fai controllare il foglio, perché un secondo append creerebbe un duplicato che nessuno noterà più.
 
-La lettura delle categorie, se ti serve verificare la lista corrente:
-
-```bash
-/opt/hermes/.venv/bin/python /opt/data/profiles/budgetingagent/scripts/budget_sheets.py read-categories
-```
-
 ## Tassonomia
 
 Le categorie senza sottocategorie elencate lasciano `--sottocategoria ""`.
@@ -146,5 +143,3 @@ Le categorie senza sottocategorie elencate lasciano `--sottocategoria ""`.
 | Salute | Medicine · Visita specialistica · Analisi · Altro |
 | Cultura | *nessuna* |
 | Beneficienza | *nessuna* |
-
-Se una spesa auto non rientra in nessuna delle otto, non forzarla: presenta l'elenco all'utente e fallo scegliere.
