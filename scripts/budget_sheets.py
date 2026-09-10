@@ -10,11 +10,12 @@ Uso:
 import json, os, re, sys, argparse, urllib.request, urllib.parse, time
 from datetime import datetime
 
-PROFILE_DIR    = "/opt/data/profiles/budgetingagent"
-TOKEN_FILE     = f"{PROFILE_DIR}/google_token.json"
-CRED_FILE      = f"{PROFILE_DIR}/google_client_secret.json"
-SPREADSHEET_ID = "1iDYzjzyu_du_axBmzOzI6k4DrzV2Y52_UZTFMtM6JB0"
-SHEET_NAME     = "Transazioni 2026"
+PROFILE_DIR      = "/opt/data/profiles/budgetingagent"
+TOKEN_FILE       = f"{PROFILE_DIR}/google_token.json"
+CRED_FILE        = f"{PROFILE_DIR}/google_client_secret.json"
+SPREADSHEET_ID   = "1iDYzjzyu_du_axBmzOzI6k4DrzV2Y52_UZTFMtM6JB0"
+SHEET_NAME       = "Transazioni 2026"
+TASSONOMIA_FILE  = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "references", "tassonomia.yaml")
 
 # ─────────────────────────────────────────────
 # Auth helpers
@@ -133,6 +134,14 @@ def validate_data(data):
 def validate_tipo(tipo):
     """Verifica che la stringa sia esattamente 'Entrata' o 'Uscita'."""
     return tipo in ("Entrata", "Uscita")
+
+
+def validate_categoria(categoria):
+    """Verifica che la stringa sia il nome esatto di una categoria in tassonomia.yaml."""
+    with open(TASSONOMIA_FILE, encoding="utf-8") as f:
+        contenuto = f.read()
+    nomi_categorie = re.findall(r'^  - nome:\s*"(.*)"\s*$', contenuto, re.MULTILINE)
+    return isinstance(categoria, str) and categoria in nomi_categorie
 
 # ─────────────────────────────────────────────
 # Operazioni sullo sheet
