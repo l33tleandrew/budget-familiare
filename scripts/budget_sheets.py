@@ -136,6 +136,16 @@ def validate_tipo(tipo):
     return tipo in ("Entrata", "Uscita")
 
 
+def validate_importo(importo):
+    """Verifica che l'importo sia positivo, con punto decimale e senza simboli di valuta (vedi SKILL.md).
+
+    Il segno lo porta '--tipo', non il numero: valori negativi non sono validi.
+    """
+    if not isinstance(importo, str) or not re.fullmatch(r"\d+\.\d+", importo):
+        return False
+    return float(importo) > 0
+
+
 def get_taxonomy_map():
     """Legge tassonomia.yaml e mappa ogni categoria alla lista delle sue sottocategorie."""
     with open(TASSONOMIA_FILE, encoding="utf-8") as f:
