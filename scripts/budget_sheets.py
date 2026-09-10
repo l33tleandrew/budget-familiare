@@ -129,6 +129,11 @@ def validate_data(data):
     except ValueError:
         return False
 
+
+def validate_tipo(tipo):
+    """Verifica che la stringa sia esattamente 'Entrata' o 'Uscita'."""
+    return tipo in ("Entrata", "Uscita")
+
 # ─────────────────────────────────────────────
 # Operazioni sullo sheet
 # ─────────────────────────────────────────────
