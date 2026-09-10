@@ -7,7 +7,8 @@ Uso:
     --categoria "Supermercato" --sottocategoria "" \
     --importo 23.0 --descrizione "" --note ""
 """
-import json, os, sys, argparse, urllib.request, urllib.parse, time
+import json, os, re, sys, argparse, urllib.request, urllib.parse, time
+from datetime import datetime
 
 PROFILE_DIR    = "/opt/data/profiles/budgetingagent"
 TOKEN_FILE     = f"{PROFILE_DIR}/google_token.json"
@@ -113,6 +114,20 @@ def _api_request(method, url, access_token, body=None, _retry=True):
             return _api_request(method, url, new_token, body=body, _retry=False)
         body_text = e.read()[:1000]
         raise RuntimeError(f"HTTP Error {e.code}: {body_text}")
+
+# ─────────────────────────────────────────────
+# Validazione
+# ─────────────────────────────────────────────
+
+def validate_data(data):
+    """Verifica che la stringa rispetti il formato gg/mm/aaaa (es. 01/09/2026)."""
+    if not isinstance(data, str) or not re.fullmatch(r"\d{2}/\d{2}/\d{4}", data):
+        return False
+    try:
+        datetime.strptime(data, "%d/%m/%Y")
+        return True
+    except ValueError:
+        return False
 
 # ─────────────────────────────────────────────
 # Operazioni sullo sheet
