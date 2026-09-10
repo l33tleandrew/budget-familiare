@@ -136,12 +136,41 @@ def validate_tipo(tipo):
     return tipo in ("Entrata", "Uscita")
 
 
+def get_taxonomy_map():
+    """Legge tassonomia.yaml e mappa ogni categoria alla lista delle sue sottocategorie."""
+    with open(TASSONOMIA_FILE, encoding="utf-8") as f:
+        righe = f.readlines()
+
+    mappa = {}
+    categoria_corrente = None
+    for riga in righe:
+        match_categoria = re.match(r'^  - nome:\s*"(.*)"\s*$', riga)
+        if match_categoria:
+            categoria_corrente = match_categoria.group(1)
+            mappa[categoria_corrente] = []
+            continue
+        match_sottocategoria = re.match(r'^      - nome:\s*"(.*)"\s*$', riga)
+        if match_sottocategoria and categoria_corrente is not None:
+            mappa[categoria_corrente].append(match_sottocategoria.group(1))
+    return mappa
+
+
 def validate_categoria(categoria):
     """Verifica che la stringa sia il nome esatto di una categoria in tassonomia.yaml."""
-    with open(TASSONOMIA_FILE, encoding="utf-8") as f:
-        contenuto = f.read()
-    nomi_categorie = re.findall(r'^  - nome:\s*"(.*)"\s*$', contenuto, re.MULTILINE)
-    return isinstance(categoria, str) and categoria in nomi_categorie
+    return isinstance(categoria, str) and categoria in get_taxonomy_map()
+
+
+def validate_sottocategoria(categoria, sottocategoria):
+    """Verifica che la sottocategoria sia coerente con la categoria in tassonomia.yaml.
+
+    Se la categoria non prevede sottocategorie, l'unico valore valido e' "" (vedi SKILL.md).
+    """
+    sottocategorie_previste = get_taxonomy_map().get(categoria)
+    if sottocategorie_previste is None:
+        return False
+    if not sottocategorie_previste:
+        return sottocategoria == ""
+    return sottocategoria in sottocategorie_previste
 
 # ─────────────────────────────────────────────
 # Operazioni sullo sheet
