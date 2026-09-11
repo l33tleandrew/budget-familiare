@@ -3,9 +3,18 @@
 budget_sheets.py — Interfaccia CLI per Budget Familiare Google Sheets
 Uso:
   python3 budget_sheets.py read-categories
-  python3 budget_sheets.py append --data "01/09/2026" --tipo "Uscita" \
+  python3 budget_sheets.py append --data "01/09/2026" \
     --categoria "Supermercato" --sottocategoria "" \
     --importo 23.0 --descrizione "" --note ""
+
+`append` passa sempre da parse_data() prima di scrivere. Exit code:
+  0  scritto
+  1  errore di autenticazione
+  2  errore di scrittura sul foglio
+  3  gateway bloccato: stampa un JSON con "messaggio", nulla è stato scritto.
+     Richiamare con i campi aggiornati (categoria/sottocategoria accettano
+     anche l'id numerico di tassonomia.yaml); una volta che l'utente conferma,
+     richiamare di nuovo aggiungendo --conferma "Si".
 """
 import json, os, re, sys, argparse, urllib.request, urllib.parse, time
 from datetime import datetime
@@ -117,9 +126,20 @@ def _api_request(method, url, access_token, body=None, _retry=True):
         raise RuntimeError(f"HTTP Error {e.code}: {body_text}")
 
 def parse_data(data, importo, categoria, sottocategoria, conferma):
+    """Gateway di validazione: un campo alla volta, come una conversazione.
+
+    Ritorna sempre un dict con le stesse 7 chiavi. "messaggio" e' vuoto solo
+    quando conferma == "Si" e tutti i campi sono validi: in quel caso il dict
+    contiene i valori pronti per append_row. Altrimenti "messaggio" indica
+    cosa manca o non e' conforme, e nulla va scritto sul foglio.
+    """
     if not data:
         data = datetime.now().strftime("%d/%m/%Y")
-    validate_data(data)
+    if not validate_data(data):
+        return {
+            "data": "", "importo": "", "categoria": "", "sottocategoria": "",
+            "tipo": "", "conferma": "", "messaggio": "Inserire una data valida (gg/mm/aaaa):",
+        }
 
     importo = validate_importo(str(importo))
     if importo is False:
@@ -132,7 +152,6 @@ def parse_data(data, importo, categoria, sottocategoria, conferma):
     sottocategoria = validate_sottocategoria(categoria, sottocategoria)
 
     if categoria is False:
-        categoria = sottocategoria = None
         return {
             "data": data, "importo": importo, "categoria": "", "sottocategoria": "",
             "tipo": "", "conferma": "", "messaggio": "Quale categoria vuoi inserire?",
@@ -150,7 +169,10 @@ def parse_data(data, importo, categoria, sottocategoria, conferma):
         return parse_data(data, importo, "", "", "")
 
     if conferma == "Si":
-        return True
+        return {
+            "data": data, "importo": importo, "categoria": categoria, "sottocategoria": sottocategoria,
+            "tipo": tipo, "conferma": "Si", "messaggio": "",
+        }
 
     return {
         "data": data, "importo": importo, "categoria": categoria, "sottocategoria": sottocategoria,
@@ -370,16 +392,23 @@ def main():
 
     subparsers.add_parser("read-categories", help="Leggi categorie/sottocategorie dal foglio")
 
-    p_append = subparsers.add_parser("append", help="Aggiungi una transazione")
-    p_append.add_argument("--data",           required=True,  help="Data DD/MM/YYYY")
-    p_append.add_argument("--tipo",           required=True,  help="Entrata o Uscita")
-    p_append.add_argument("--categoria",      required=True)
+    p_append = subparsers.add_parser("append", help="Aggiungi una transazione (validata da parse_data)")
+    p_append.add_argument("--data",           default="", help="Data DD/MM/YYYY (default: oggi)")
+    p_append.add_argument("--categoria",      default="", help="Nome o id da references/tassonomia.yaml")
     p_append.add_argument("--sottocategoria", default="")
-    p_append.add_argument("--importo",        required=True,  help="Importo positivo (es. 23.50)")
+    p_append.add_argument("--importo",        default="", help="Importo positivo (es. 23.50)")
     p_append.add_argument("--descrizione",    default="")
     p_append.add_argument("--note",           default="")
+    p_append.add_argument("--conferma",       default="", help='"Si" per eseguire la scrittura')
 
     args = parser.parse_args()
+
+    risultato = None
+    if args.command == "append":
+        risultato = parse_data(args.data, args.importo, args.categoria, args.sottocategoria, args.conferma)
+        if risultato["messaggio"]:
+            print(json.dumps(risultato, ensure_ascii=False, indent=2))
+            sys.exit(3)
 
     try:
         token = get_access_token()
@@ -398,8 +427,9 @@ def main():
         try:
             updated = append_row(
                 token,
-                args.data, args.tipo, args.categoria,
-                args.sottocategoria, args.importo, args.descrizione, args.note
+                risultato["data"], risultato["tipo"], risultato["categoria"],
+                risultato["sottocategoria"], risultato["importo"],
+                args.descrizione, args.note
             )
             print(f"OK:{updated}")
         except RuntimeError as e:
