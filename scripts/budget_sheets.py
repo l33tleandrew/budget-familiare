@@ -116,6 +116,47 @@ def _api_request(method, url, access_token, body=None, _retry=True):
         body_text = e.read()[:1000]
         raise RuntimeError(f"HTTP Error {e.code}: {body_text}")
 
+def parse_data(data, importo, categoria, sottocategoria, conferma):
+    if not data:
+        data = datetime.now().strftime("%d/%m/%Y")
+    validate_data(data)
+
+    importo = validate_importo(str(importo))
+    if importo is False:
+        return {
+            "data": data, "importo": "", "categoria": "", "sottocategoria": "",
+            "tipo": "", "conferma": "", "messaggio": "Inserire importo:",
+        }
+
+    categoria = validate_categoria(categoria)
+    sottocategoria = validate_sottocategoria(categoria, sottocategoria)
+
+    if categoria is False:
+        categoria = sottocategoria = None
+        return {
+            "data": data, "importo": importo, "categoria": "", "sottocategoria": "",
+            "tipo": "", "conferma": "", "messaggio": "Quale categoria vuoi inserire?",
+        }
+
+    if sottocategoria is False:
+        return {
+            "data": data, "importo": importo, "categoria": categoria, "sottocategoria": "",
+            "tipo": "", "conferma": "", "messaggio": "Quale sottocategoria vuoi inserire?",
+        }
+
+    tipo = get_tipo(categoria, sottocategoria)
+
+    if conferma == "No":
+        return parse_data(data, importo, "", "", "")
+
+    if conferma == "Si":
+        return True
+
+    return {
+        "data": data, "importo": importo, "categoria": categoria, "sottocategoria": sottocategoria,
+        "tipo": tipo, "conferma": "", "messaggio": "Confermi?",
+    }
+
 # ─────────────────────────────────────────────
 # Validazione
 # ─────────────────────────────────────────────
@@ -137,13 +178,27 @@ def validate_tipo(tipo):
 
 
 def validate_importo(importo):
-    """Verifica che l'importo sia positivo, con punto decimale e senza simboli di valuta (vedi SKILL.md).
-
-    Il segno lo porta '--tipo', non il numero: valori negativi non sono validi.
-    """
-    if not isinstance(importo, str) or not re.fullmatch(r"\d+\.\d+", importo):
+    """Verifica che l'importo sia un numero positivo, senza simboli di valuta.
+    Riconosce il formato inglese (punto decimale), quello italiano (virgola
+    decimale, punto delle migliaia facoltativo) e un intero senza virgola né
+    punto (es. 1200 => 1200.00), e lo restituisce sempre come float in formato
+    inglese. Il segno lo porta '--tipo', non il numero: valori negativi non
+    sono validi. Restituisce False se l'importo non è un numero valido."""
+    if not isinstance(importo, str):
         return False
-    return float(importo) > 0
+    s = importo.strip()
+
+    if re.fullmatch(r"\d{1,3}(\.\d{3})*,\d+", s):
+        s = s.replace(".", "").replace(",", ".")
+    elif re.fullmatch(r"\d+,\d+", s):
+        s = s.replace(",", ".")
+    elif re.fullmatch(r"\d+", s):
+        pass
+    elif not re.fullmatch(r"\d+\.\d+", s):
+        return False
+
+    valore = float(s)
+    return valore if valore > 0 else False
 
 
 def get_taxonomy_map():
@@ -165,22 +220,108 @@ def get_taxonomy_map():
     return mappa
 
 
+def find_categoria_by_id(categoria_id):
+    with open(TASSONOMIA_FILE, encoding="utf-8") as f:
+        righe = f.readlines()
+
+    categoria_corrente = None
+    for riga in righe:
+        match_categoria = re.match(r'^  - nome:\s*"(.*)"\s*$', riga)
+        if match_categoria:
+            categoria_corrente = match_categoria.group(1)
+            continue
+        match_id = re.match(r'^    id:\s*(\d+)\s*$', riga)
+        if match_id and categoria_corrente is not None and int(match_id.group(1)) == int(categoria_id):
+            return categoria_corrente
+    return False
+
+
 def validate_categoria(categoria):
-    """Verifica che la stringa sia il nome esatto di una categoria in tassonomia.yaml."""
-    return isinstance(categoria, str) and categoria in get_taxonomy_map()
+    if not isinstance(categoria, str):
+        return False
+    if re.fullmatch(r"\d+", categoria):
+        return find_categoria_by_id(categoria)
+    if categoria in get_taxonomy_map():
+        return categoria
+    return False
+
+
+def find_sottocategoria_by_id(categoria, sottocategoria_id):
+    with open(TASSONOMIA_FILE, encoding="utf-8") as f:
+        righe = f.readlines()
+
+    categoria_corrente = None
+    sottocategoria_corrente = None
+    for riga in righe:
+        match_categoria = re.match(r'^  - nome:\s*"(.*)"\s*$', riga)
+        if match_categoria:
+            categoria_corrente = match_categoria.group(1)
+            sottocategoria_corrente = None
+            continue
+        match_sottocategoria = re.match(r'^      - nome:\s*"(.*)"\s*$', riga)
+        if match_sottocategoria:
+            sottocategoria_corrente = match_sottocategoria.group(1)
+            continue
+        match_id = re.match(r'^        id:\s*(\d+)\s*$', riga)
+        if (match_id and categoria_corrente == categoria and sottocategoria_corrente is not None
+                and int(match_id.group(1)) == int(sottocategoria_id)):
+            return sottocategoria_corrente
+    return False
 
 
 def validate_sottocategoria(categoria, sottocategoria):
-    """Verifica che la sottocategoria sia coerente con la categoria in tassonomia.yaml.
-
-    Se la categoria non prevede sottocategorie, l'unico valore valido e' "" (vedi SKILL.md).
-    """
     sottocategorie_previste = get_taxonomy_map().get(categoria)
     if sottocategorie_previste is None:
         return False
     if not sottocategorie_previste:
-        return sottocategoria == ""
-    return sottocategoria in sottocategorie_previste
+        return "" if sottocategoria == "" else False
+    if not isinstance(sottocategoria, str):
+        return False
+    if re.fullmatch(r"\d+", sottocategoria):
+        return find_sottocategoria_by_id(categoria, sottocategoria)
+    if sottocategoria in sottocategorie_previste:
+        return sottocategoria
+    return False
+
+
+def get_tipo(categoria, sottocategoria=""):
+    """Restituisce il tipo ('Entrata' o 'Uscita') di categoria/sottocategoria.
+    Se la sottocategoria ha un tipo proprio (categorie con tipo 'entrambi',
+    es. Investimento), quello ha la precedenza su quello della categoria.
+    Restituisce False se la categoria non esiste in tassonomia.yaml.
+    """
+    with open(TASSONOMIA_FILE, encoding="utf-8") as f:
+        righe = f.readlines()
+
+    categoria_corrente = None
+    categoria_tipo = None
+    sottocategoria_corrente = None
+
+    for riga in righe:
+        match_categoria = re.match(r'^  - nome:\s*"(.*)"\s*$', riga)
+        if match_categoria:
+            categoria_corrente = match_categoria.group(1)
+            sottocategoria_corrente = None
+            continue
+
+        match_sottocategoria = re.match(r'^      - nome:\s*"(.*)"\s*$', riga)
+        if match_sottocategoria:
+            sottocategoria_corrente = match_sottocategoria.group(1)
+            continue
+
+        if categoria_corrente == categoria:
+            match_sottocategoria_tipo = re.match(r'^        tipo:\s*(\w+)\s*$', riga)
+            if (match_sottocategoria_tipo and sottocategoria
+                    and sottocategoria_corrente == sottocategoria):
+                return match_sottocategoria_tipo.group(1).capitalize()
+
+            match_categoria_tipo = re.match(r'^    tipo:\s*(\w+)\s*$', riga)
+            if match_categoria_tipo:
+                categoria_tipo = match_categoria_tipo.group(1)
+
+    if categoria_tipo in ("entrata", "uscita"):
+        return categoria_tipo.capitalize()
+    return False
 
 # ─────────────────────────────────────────────
 # Operazioni sullo sheet

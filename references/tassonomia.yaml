@@ -2,6 +2,7 @@
 #
 # Schema di ogni categoria:
 #   nome            stringa canonica, identica a quella scritta sul foglio (obbligatoria)
+#   id              intero numerico, identifica numericamente la categoria
 #   tipo            uscita | entrata | entrambi (default: uscita)
 #   sottocategorie  lista, SEMPRE presente: [] se la categoria non ne prevede
 #
@@ -11,134 +12,224 @@ aggiornata: 2026-09-09
 
 categorie:
   - nome: "Stipendio"
+    id: 1
     tipo: entrata
     sottocategorie: []
 
   - nome: "Supermercato"
+    id: 2
     tipo: uscita
     sottocategorie: []
 
   - nome: "Cibo fuori / bevute"
+    id: 3
     tipo: uscita
     sottocategorie:
       - nome: "Asporto"
+        id: 1
       - nome: "Bar"
+        id: 2
       - nome: "Da amici"
+        id: 3
       - nome: "Fast food"
+        id: 4
       - nome: "Ristorante"
+        id: 5
       - nome: "Bevuta"
+        id: 6
       - nome: "Altro"
+        id: 7
 
   - nome: "Auto / Moto"
+    id: 4
     tipo: uscita
     sottocategorie:
       - nome: "Benzina"
+        id: 1
       - nome: "Assicurazione"
+        id: 2
       - nome: "Bollo"
+        id: 3
       - nome: "Parcheggio"
+        id: 4
       - nome: "Pedaggio"
+        id: 5
       - nome: "Autolavaggio"
+        id: 6
       - nome: "Riparazione"
+        id: 7
       - nome: "Multa"
+        id: 8
 
   - nome: "Sport"
+    id: 5
     tipo: uscita
     sottocategorie:
       - nome: "Palestra"
+        id: 1
       - nome: "Piscina"
+        id: 2
       - nome: "Padel"
+        id: 3
       - nome: "Altro"
+        id: 4
 
   - nome: "Casa"
+    id: 6
     tipo: uscita
     sottocategorie:
       - nome: "Rata condominiale"
+        id: 1
       - nome: "Bolletta Internet"
+        id: 2
       - nome: "Bolletta elettrica"
+        id: 3
       - nome: "Rata mutuo"
+        id: 4
       - nome: "TARI"
+        id: 5
       - nome: "Manutenzione/Riparazione"
+        id: 6
       - nome: "Oggettistica"
+        id: 7
       - nome: "Altro"
+        id: 8
 
   - nome: "Abbigliamento"
+    id: 7
     tipo: uscita
     sottocategorie: []
 
   - nome: "Abbonamenti"
+    id: 8
     tipo: uscita
     sottocategorie:
       - nome: "Spotify"
+        id: 1
       - nome: "Amazon Prime"
+        id: 2
       - nome: "Disney Plus"
+        id: 3
       - nome: "Netflix"
+        id: 4
       - nome: "Altro"
+        id: 5
 
   - nome: "Divertimento"
+    id: 9
     tipo: uscita
     sottocategorie: []
 
   - nome: "Investimento"
+    id: 10
     tipo: entrambi
     sottocategorie:
       - nome: "Tasse"
+        id: 1
+        tipo: uscita
       - nome: "PAC"
+        id: 2
+        tipo: uscita
       - nome: "Plusvalenza"
+        id: 3
+        tipo: entrata
       - nome: "Minusvalenza"
+        id: 4
+        tipo: uscita
       - nome: "Interessi maturati"
+        id: 5
+        tipo: entrata
       - nome: "Commissioni"
+        id: 6
+        tipo: uscita
       - nome: "Dividendi"
+        id: 7
+        tipo: entrata
       - nome: "Altro"
+        id: 8
+        tipo: uscita
 
   - nome: "Regali"
+    id: 11
     tipo: uscita
     sottocategorie:
       - nome: "Compleanno"
+        id: 1
       - nome: "Natale"
+        id: 2
       - nome: "Anniversario"
+        id: 3
       - nome: "San Valentino"
+        id: 4
       - nome: "Matrimonio"
+        id: 5
       - nome: "Altro"
+        id: 6
 
   - nome: "Viaggi"
+    id: 12
     tipo: uscita
     sottocategorie:
       - nome: "Voli"
+        id: 1
       - nome: "Alloggio"
+        id: 2
       - nome: "Cibo fuori"
+        id: 3
       - nome: "Supermercato"
+        id: 4
       - nome: "Mezzi pubblici"
+        id: 5
       - nome: "Auto"
+        id: 6
       - nome: "Divertimento"
+        id: 7
       - nome: "Altro"
+        id: 8
 
   - nome: "Cura / Benessere"
+    id: 13
     tipo: uscita
     sottocategorie:
       - nome: "Taglio capelli"
+        id: 1
       - nome: "Estetista"
+        id: 2
       - nome: "Altro"
+        id: 3
 
   - nome: "Trasporto pubblico"
+    id: 14
     tipo: uscita
     sottocategorie:
       - nome: "Abbonamento"
+        id: 1
       - nome: "Biglietto singolo"
+        id: 2
       - nome: "Sharing"
+        id: 3
       - nome: "Altro"
+        id: 4
 
   - nome: "Salute"
+    id: 15
     tipo: uscita
     sottocategorie:
       - nome: "Medicine"
+        id: 1
       - nome: "Visita specialistica"
+        id: 2
       - nome: "Analisi"
+        id: 3
       - nome: "Altro"  
+        id: 4
 
   - nome: "Cultura"
+    id: 16
     tipo: uscita
     sottocategorie: []
 
   - nome: "Beneficienza"
+    id: 17
     tipo: uscita
     sottocategorie: []
