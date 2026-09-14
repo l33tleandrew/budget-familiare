@@ -1,23 +1,36 @@
 #!/usr/bin/env python3
 """
 budget_sheets.py — Interfaccia CLI per Budget Familiare Google Sheets
-Uso:
-  python3 budget_sheets.py read-categories
-  python3 budget_sheets.py append --data "01/09/2026" \
-    --categoria "Supermercato" --sottocategoria "" \
-    --importo 23.0 --descrizione "" --note ""
 
-`append` passa sempre da parse_data() prima di scrivere. Exit code:
-  0  scritto
-  1  errore di autenticazione
-  2  errore di scrittura sul foglio
-  3  gateway bloccato: stampa un JSON con "messaggio" (ed eventualmente
-     "opzioni", l'elenco tra cui scegliere), nulla è stato scritto.
-     Richiamare con i campi aggiornati (categoria/sottocategoria accettano
-     anche l'id numerico di tassonomia.yaml); una volta che l'utente conferma,
-     richiamare di nuovo aggiungendo --conferma "Si".
+Lo script conduce il dialogo e ne conserva lo stato in una bozza su disco: chi
+lo chiama non deve ricordare niente fra un turno e l'altro.
+
+  # primo turno di una transazione nuova
+  python3 budget_sheets.py append --nuova --importo 30.00 \
+      --categoria "Cibo fuori / bevute" --descrizione "Trattoria da Nino"
+
+  # ogni turno successivo: solo quello che ha risposto l'utente
+  python3 budget_sheets.py append --risposta "5"
+  python3 budget_sheets.py append --risposta "si"
+
+Ogni invocazione stampa su stdout un solo JSON con le stesse chiavi. Le due che
+contano sono "messaggio" (il testo completo da mostrare all'utente, elenco
+numerato e riepilogo inclusi: non c'e' niente da comporre) e "stato". Si continua
+a chiamare finche' "stato" inizia per "chiedi_".
+
+Exit code:
+  0   scritto            riga sul foglio, bozza cancellata
+  3   in dialogo         (chiedi_*) oppure stato terminale benigno
+                         (annullata, bozza_scaduta, bozza_assente,
+                          scrittura_in_corso)
+  1   errore_auth        bozza conservata
+  2   errore_scrittura   bozza conservata
+  5   errore_tassonomia  tipo non ricavabile: niente e' stato scritto
+  6   errore_bozza       non si riesce a salvare lo stato del dialogo
+  64  errore d'uso       argomenti sbagliati o sottocomando mancante
 """
 import json, os, re, sys, argparse, urllib.request, urllib.parse, time
+import contextlib, fcntl, tempfile, unicodedata
 from datetime import datetime
 
 PROFILE_DIR      = "/opt/data/profiles/budgetingagent"
@@ -26,6 +39,30 @@ CRED_FILE        = f"{PROFILE_DIR}/google_client_secret.json"
 SPREADSHEET_ID   = "1iDYzjzyu_du_axBmzOzI6k4DrzV2Y52_UZTFMtM6JB0"
 SHEET_NAME       = "Transazioni 2026"
 TASSONOMIA_FILE  = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "references", "tassonomia.yaml")
+
+
+def _bozza_predefinita():
+    """La bozza sta in PROFILE_DIR, due livelli SOPRA il worktree git.
+
+    sync_budget_skill.sh fa `git add -A` dentro la directory della skill: un
+    percorso fuori dal worktree e' irraggiungibile, non solo ignorato. E' una
+    garanzia piu' forte di una riga in .gitignore, che un `git add -f` o un
+    merge sbagliato vanificherebbero — e qui dentro c'e' lo storico di spesa
+    della famiglia.
+    """
+    if os.path.isdir(PROFILE_DIR):
+        return os.path.join(PROFILE_DIR, "bozza_transazione.json")
+    return os.path.join(tempfile.gettempdir(), "budget_bozza_transazione.json")
+
+
+BOZZA_FILE     = os.environ.get("BUDGET_BOZZA_FILE") or _bozza_predefinita()
+try:
+    BOZZA_TTL = int(os.environ.get("BUDGET_BOZZA_TTL_MIN", "15")) * 60
+except ValueError:
+    BOZZA_TTL = 15 * 60  # un env var storto non deve far esplodere l'import
+BOZZA_VERSIONE = 1
+
+CAMPI = ("data", "importo", "categoria", "sottocategoria", "descrizione", "note", "conferma")
 
 # ─────────────────────────────────────────────
 # Auth helpers
@@ -126,64 +163,171 @@ def _api_request(method, url, access_token, body=None, _retry=True):
         body_text = e.read()[:1000]
         raise RuntimeError(f"HTTP Error {e.code}: {body_text}")
 
-def parse_data(data, importo, categoria, sottocategoria, conferma):
-    """Gateway di validazione: un campo alla volta, come una conversazione.
+# ─────────────────────────────────────────────
+# Tassonomia
+# ─────────────────────────────────────────────
 
-    Ritorna sempre un dict con le stesse 8 chiavi. "messaggio" e' vuoto solo
-    quando conferma == "Si" e tutti i campi sono validi: in quel caso il dict
-    contiene i valori pronti per append_row. Altrimenti "messaggio" indica
-    cosa manca o non e' conforme, "opzioni" elenca (se pertinente) i valori
-    validi tra cui scegliere, e nulla va scritto sul foglio.
+_TASSONOMIA_CACHE = None
+
+
+def leggi_tassonomia():
+    """Legge tassonomia.yaml una volta sola e la tiene in cache.
+
+    Niente PyYAML: sul server la skill gira con un interprete dove non si
+    possono installare pacchetti, quindi si parsano le righe grezze. Di
+    conseguenza l'indentazione del file e' significativa: 2 spazi per la
+    categoria, 4 per i suoi attributi, 6 per la sottocategoria, 8 per i suoi.
+
+    [{"id": 3, "nome": "Cibo fuori / bevute", "tipo": "uscita",
+      "sottocategorie": [{"id": 1, "nome": "Asporto", "tipo": None}, ...]}, ...]
     """
-    if not data:
-        data = datetime.now().strftime("%d/%m/%Y")
-    if not validate_data(data):
-        return {
-            "data": "", "importo": "", "categoria": "", "sottocategoria": "",
-            "tipo": "", "conferma": "", "messaggio": "Inserire una data valida (gg/mm/aaaa):",
-            "opzioni": [],
-        }
+    global _TASSONOMIA_CACHE
+    if _TASSONOMIA_CACHE is not None:
+        return _TASSONOMIA_CACHE
 
-    importo = validate_importo(str(importo))
-    if importo is False:
-        return {
-            "data": data, "importo": "", "categoria": "", "sottocategoria": "",
-            "tipo": "", "conferma": "", "messaggio": "Inserire importo:",
-            "opzioni": [],
-        }
+    with open(TASSONOMIA_FILE, encoding="utf-8") as f:
+        righe = f.readlines()
 
-    categoria = validate_categoria(categoria)
-    sottocategoria = validate_sottocategoria(categoria, sottocategoria)
+    categorie = []
+    for riga in righe:
+        m = re.match(r'^  - nome:\s*"(.*)"\s*$', riga)
+        if m:
+            categorie.append({"nome": m.group(1), "id": None, "tipo": "uscita",
+                              "sottocategorie": []})
+            continue
+        if not categorie:
+            continue
+        cat = categorie[-1]
 
-    if categoria is False:
-        return {
-            "data": data, "importo": importo, "categoria": "", "sottocategoria": "",
-            "tipo": "", "conferma": "", "messaggio": "Quale categoria? Rispondi con il numero.",
-            "opzioni": list(get_taxonomy_map().keys()),
-        }
+        m = re.match(r'^      - nome:\s*"(.*)"\s*$', riga)
+        if m:
+            cat["sottocategorie"].append({"nome": m.group(1), "id": None, "tipo": None})
+            continue
 
-    if sottocategoria is False:
-        return {
-            "data": data, "importo": importo, "categoria": categoria, "sottocategoria": "",
-            "tipo": "", "conferma": "", "messaggio": "Quale sottocategoria? Rispondi con il numero.",
-            "opzioni": get_taxonomy_map().get(categoria, []),
-        }
+        # Gli attributi a 8 spazi appartengono all'ultima sottocategoria vista,
+        # quelli a 4 alla categoria. L'ordine dei controlli conta: la regex a 4
+        # spazi non deve catturare una riga indentata di 8.
+        m = re.match(r'^        id:\s*(\d+)\s*$', riga)
+        if m and cat["sottocategorie"]:
+            cat["sottocategorie"][-1]["id"] = int(m.group(1))
+            continue
+        m = re.match(r'^        tipo:\s*(\w+)\s*$', riga)
+        if m and cat["sottocategorie"]:
+            cat["sottocategorie"][-1]["tipo"] = m.group(1)
+            continue
+        m = re.match(r'^    id:\s*(\d+)\s*$', riga)
+        if m:
+            cat["id"] = int(m.group(1))
+            continue
+        m = re.match(r'^    tipo:\s*(\w+)\s*$', riga)
+        if m:
+            cat["tipo"] = m.group(1)
 
-    tipo = get_tipo(categoria, sottocategoria)
+    _TASSONOMIA_CACHE = categorie
+    return categorie
 
-    if conferma == "No":
-        return parse_data(data, importo, "", "", "")
 
-    if conferma == "Si":
-        return {
-            "data": data, "importo": importo, "categoria": categoria, "sottocategoria": sottocategoria,
-            "tipo": tipo, "conferma": "Si", "messaggio": "", "opzioni": [],
-        }
+def _piatto(s):
+    """Minuscolo e senza accenti, per confrontare quello che scrive l'utente.
 
-    return {
-        "data": data, "importo": importo, "categoria": categoria, "sottocategoria": sottocategoria,
-        "tipo": tipo, "conferma": "", "messaggio": "Confermi?", "opzioni": [],
-    }
+    "Sì", "SI", "si " diventano tutti "si"; "Cura / Benessere" diventa
+    "cura / benessere". Serve sia per la conferma sia per i nomi di categoria.
+    """
+    s = unicodedata.normalize("NFD", str(s).strip().lower())
+    return "".join(c for c in s if not unicodedata.combining(c))
+
+
+def trova_categoria(valore):
+    """Categoria per id numerico o per nome (tollerante su accenti e maiuscole)."""
+    if valore is None:
+        return None
+    valore = str(valore).strip()
+    if not valore:
+        return None
+    categorie = leggi_tassonomia()
+    if re.fullmatch(r"\d+", valore):
+        return next((c for c in categorie if c["id"] == int(valore)), None)
+    piatto = _piatto(valore)
+    return next((c for c in categorie if _piatto(c["nome"]) == piatto), None)
+
+
+def trova_sottocategoria(categoria, valore):
+    """Sottocategoria dentro una categoria, per id o per nome. L'id e' relativo
+    alla categoria: il "5" di Cibo fuori non e' il "5" di Auto / Moto."""
+    if categoria is None or valore is None:
+        return None
+    valore = str(valore).strip()
+    if not valore:
+        return None
+    sotto = categoria["sottocategorie"]
+    if re.fullmatch(r"\d+", valore):
+        return next((s for s in sotto if s["id"] == int(valore)), None)
+    piatto = _piatto(valore)
+    return next((s for s in sotto if _piatto(s["nome"]) == piatto), None)
+
+
+def tipo_di(categoria, sottocategoria=None):
+    """'Entrata' | 'Uscita' | None.
+
+    None significa tassonomia incoerente (tipo 'entrambi' senza un tipo sulla
+    sottocategoria): non e' un valore da scrivere sul foglio, e' un errore di
+    configurazione. Prima questa funzione restituiva False, che finiva in
+    colonna B come la stringa "False".
+    """
+    if categoria is None:
+        return None
+    if sottocategoria and sottocategoria.get("tipo") in ("entrata", "uscita"):
+        return sottocategoria["tipo"].capitalize()
+    if categoria["tipo"] in ("entrata", "uscita"):
+        return categoria["tipo"].capitalize()
+    return None
+
+
+# Wrapper sottili sulla tassonomia: l'interfaccia storica, usata dai test.
+
+def get_taxonomy_map():
+    """{categoria: [sottocategorie]}, nell'ordine del file."""
+    return {c["nome"]: [s["nome"] for s in c["sottocategorie"]] for c in leggi_tassonomia()}
+
+
+def find_categoria_by_id(categoria_id):
+    cat = next((c for c in leggi_tassonomia() if c["id"] == int(categoria_id)), None)
+    return cat["nome"] if cat else False
+
+
+def find_sottocategoria_by_id(categoria, sottocategoria_id):
+    cat = next((c for c in leggi_tassonomia() if c["nome"] == categoria), None)
+    sotto = trova_sottocategoria(cat, str(sottocategoria_id)) if cat else None
+    return sotto["nome"] if sotto else False
+
+
+def validate_categoria(categoria):
+    cat = trova_categoria(categoria)
+    return cat["nome"] if cat else False
+
+
+def validate_sottocategoria(categoria, sottocategoria):
+    """Nome canonico, "" se la categoria non ne prevede, False se non si risolve.
+
+    Una categoria senza sottocategorie restituisce "" qualunque cosa le si
+    passi: e' un fatto della tassonomia, non qualcosa che chi chiama debba
+    dichiarare. Cosi' lo script non puo' piu' chiedere una sottocategoria che
+    non esiste — la domanda senza risposta che mandava il dialogo in loop.
+    """
+    cat = trova_categoria(categoria)
+    if cat is None:
+        return False
+    if not cat["sottocategorie"]:
+        return ""
+    sotto = trova_sottocategoria(cat, sottocategoria)
+    return sotto["nome"] if sotto else False
+
+
+def get_tipo(categoria, sottocategoria=""):
+    cat = trova_categoria(categoria)
+    sotto = trova_sottocategoria(cat, sottocategoria) if sottocategoria else None
+    tipo = tipo_di(cat, sotto)
+    return tipo if tipo is not None else False
 
 # ─────────────────────────────────────────────
 # Validazione
@@ -210,8 +354,10 @@ def validate_importo(importo):
     Riconosce il formato inglese (punto decimale), quello italiano (virgola
     decimale, punto delle migliaia facoltativo) e un intero senza virgola né
     punto (es. 1200 => 1200.00), e lo restituisce sempre come float in formato
-    inglese. Il segno lo porta '--tipo', non il numero: valori negativi non
+    inglese. Il segno lo porta il tipo, non il numero: valori negativi non
     sono validi. Restituisce False se l'importo non è un numero valido."""
+    if isinstance(importo, (int, float)) and not isinstance(importo, bool):
+        return float(importo) if importo > 0 else False
     if not isinstance(importo, str):
         return False
     s = importo.strip()
@@ -229,152 +375,315 @@ def validate_importo(importo):
     return valore if valore > 0 else False
 
 
-def get_taxonomy_map():
-    """Legge tassonomia.yaml e mappa ogni categoria alla lista delle sue sottocategorie."""
-    with open(TASSONOMIA_FILE, encoding="utf-8") as f:
-        righe = f.readlines()
-
-    mappa = {}
-    categoria_corrente = None
-    for riga in righe:
-        match_categoria = re.match(r'^  - nome:\s*"(.*)"\s*$', riga)
-        if match_categoria:
-            categoria_corrente = match_categoria.group(1)
-            mappa[categoria_corrente] = []
-            continue
-        match_sottocategoria = re.match(r'^      - nome:\s*"(.*)"\s*$', riga)
-        if match_sottocategoria and categoria_corrente is not None:
-            mappa[categoria_corrente].append(match_sottocategoria.group(1))
-    return mappa
+_SI = {"si", "s", "ok", "okay", "yes", "y", "va bene", "vabene", "certo",
+       "conferma", "confermo", "esatto", "giusto", "perfetto", "procedi", "vai"}
+_NO = {"no", "n", "annulla", "no grazie", "sbagliato", "negativo", "lascia perdere"}
 
 
-def find_categoria_by_id(categoria_id):
-    with open(TASSONOMIA_FILE, encoding="utf-8") as f:
-        righe = f.readlines()
+def interpreta_conferma(testo):
+    """'Si' | 'No' | '' (non capito: si rimostra il riepilogo).
 
-    categoria_corrente = None
-    for riga in righe:
-        match_categoria = re.match(r'^  - nome:\s*"(.*)"\s*$', riga)
-        if match_categoria:
-            categoria_corrente = match_categoria.group(1)
-            continue
-        match_id = re.match(r'^    id:\s*(\d+)\s*$', riga)
-        if match_id and categoria_corrente is not None and int(match_id.group(1)) == int(categoria_id):
-            return categoria_corrente
-    return False
-
-
-def validate_categoria(categoria):
-    if not isinstance(categoria, str):
-        return False
-    if re.fullmatch(r"\d+", categoria):
-        return find_categoria_by_id(categoria)
-    if categoria in get_taxonomy_map():
-        return categoria
-    return False
-
-
-def find_sottocategoria_by_id(categoria, sottocategoria_id):
-    with open(TASSONOMIA_FILE, encoding="utf-8") as f:
-        righe = f.readlines()
-
-    categoria_corrente = None
-    sottocategoria_corrente = None
-    for riga in righe:
-        match_categoria = re.match(r'^  - nome:\s*"(.*)"\s*$', riga)
-        if match_categoria:
-            categoria_corrente = match_categoria.group(1)
-            sottocategoria_corrente = None
-            continue
-        match_sottocategoria = re.match(r'^      - nome:\s*"(.*)"\s*$', riga)
-        if match_sottocategoria:
-            sottocategoria_corrente = match_sottocategoria.group(1)
-            continue
-        match_id = re.match(r'^        id:\s*(\d+)\s*$', riga)
-        if (match_id and categoria_corrente == categoria and sottocategoria_corrente is not None
-                and int(match_id.group(1)) == int(sottocategoria_id)):
-            return sottocategoria_corrente
-    return False
-
-
-def validate_sottocategoria(categoria, sottocategoria):
-    sottocategorie_previste = get_taxonomy_map().get(categoria)
-    if sottocategorie_previste is None:
-        return False
-    if not sottocategorie_previste:
-        return "" if sottocategoria == "" else False
-    if not isinstance(sottocategoria, str):
-        return False
-    if re.fullmatch(r"\d+", sottocategoria):
-        return find_sottocategoria_by_id(categoria, sottocategoria)
-    if sottocategoria in sottocategorie_previste:
-        return sottocategoria
-    return False
-
-
-def get_tipo(categoria, sottocategoria=""):
-    """Restituisce il tipo ('Entrata' o 'Uscita') di categoria/sottocategoria.
-    Se la sottocategoria ha un tipo proprio (categorie con tipo 'entrambi',
-    es. Investimento), quello ha la precedenza su quello della categoria.
-    Restituisce False se la categoria non esiste in tassonomia.yaml.
+    "1" e "2" sono deliberatamente fuori da entrambi gli insiemi: sarebbero
+    ambigui contro un numero di categoria se lo stato andasse alla deriva.
     """
-    with open(TASSONOMIA_FILE, encoding="utf-8") as f:
-        righe = f.readlines()
+    p = _piatto(testo)
+    if p in _SI:
+        return "Si"
+    if p in _NO:
+        return "No"
+    return ""
 
-    categoria_corrente = None
-    categoria_tipo = None
-    sottocategoria_corrente = None
+# ─────────────────────────────────────────────
+# Bozza: lo stato del dialogo, su disco
+# ─────────────────────────────────────────────
 
-    for riga in righe:
-        match_categoria = re.match(r'^  - nome:\s*"(.*)"\s*$', riga)
-        if match_categoria:
-            categoria_corrente = match_categoria.group(1)
-            sottocategoria_corrente = None
+@contextlib.contextmanager
+def _bozza_lock():
+    """Serializza il ciclo leggi-fondi-scrivi sulla bozza.
+
+    Senza, due invocazioni ravvicinate leggono la stessa bozza e la seconda
+    scrittura perde il campo della prima: lo stesso sintomo che tutta questa
+    riscrittura elimina, ma da un'altra causa. Non va mai tenuto durante la
+    chiamata HTTP a Google, o una richiesta appesa blocca ogni turno successivo.
+    """
+    percorso = BOZZA_FILE + ".lock"
+    try:
+        fd = os.open(percorso, os.O_CREAT | os.O_RDWR, 0o600)
+    except OSError:
+        yield  # senza lock si va avanti lo stesso: meglio degradati che fermi
+        return
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        os.close(fd)
+
+
+def campi_vuoti():
+    return {c: "" for c in CAMPI}
+
+
+def carica_bozza(ora=None):
+    """La bozza viva, la stringa "scaduta", oppure None.
+
+    Qualunque anomalia — file assente, JSON rotto, versione ignota — vale come
+    "nessuna bozza": chi sta registrando una spesa non deve mai vedere un
+    traceback.
+    """
+    ora = time.time() if ora is None else ora
+    try:
+        with open(BOZZA_FILE, encoding="utf-8") as f:
+            bozza = json.load(f)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(bozza, dict) or bozza.get("versione") != BOZZA_VERSIONE:
+        cancella_bozza()
+        return None
+    if ora - bozza.get("aggiornato", 0) > BOZZA_TTL:
+        cancella_bozza()
+        return "scaduta"
+    campi = campi_vuoti()
+    campi.update({k: v for k, v in (bozza.get("campi") or {}).items() if k in CAMPI})
+    bozza["campi"] = campi
+    return bozza
+
+
+def salva_bozza(stato, campi, ora=None):
+    """Scrittura atomica: un lettore vede la bozza vecchia o la nuova, mai meta'."""
+    tmp = f"{BOZZA_FILE}.{os.getpid()}.tmp"
+    payload = {
+        "versione": BOZZA_VERSIONE,
+        "aggiornato": time.time() if ora is None else ora,
+        "stato": stato,
+        "campi": campi,
+    }
+    try:
+        # O_NOFOLLOW e 0600: il fallback in /tmp e' un percorso prevedibile e
+        # condiviso, e qui dentro c'e' quanto e dove spende una famiglia.
+        fd = os.open(tmp, os.O_CREAT | os.O_WRONLY | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, BOZZA_FILE)
+    except OSError:
+        with contextlib.suppress(OSError):
+            os.unlink(tmp)
+        raise
+
+
+def cancella_bozza():
+    with contextlib.suppress(OSError):
+        os.unlink(BOZZA_FILE)
+
+# ─────────────────────────────────────────────
+# Logica del dialogo
+# ─────────────────────────────────────────────
+
+def _stessa_categoria(a, b):
+    """Confronto in forma canonica: "3", "supermercato" e "Supermercato" sono la
+    stessa categoria. Confrontare le stringhe grezze farebbe decadere una
+    sottocategoria gia' scelta solo perche' l'utente ha ridetto la categoria in
+    un altro modo."""
+    ca, cb = trova_categoria(a), trova_categoria(b)
+    if ca is None or cb is None:
+        return str(a) == str(b)
+    return ca["nome"] == cb["nome"]
+
+
+def unisci(campi, nuovi):
+    """Fonde nella bozza i campi nuovi, ignorando quelli non passati (None).
+
+    Regola d'oro: nel dubbio si fonde e si richiede conferma, mai si scarta. La
+    conferma e' la rete di sicurezza — niente arriva sul foglio senza che
+    l'utente abbia letto la riga intera — quindi una fusione sbagliata e'
+    visibile e si annulla in un turno, mentre uno scarto automatico sarebbe
+    silenzioso e distruggerebbe quello che l'utente aveva gia' detto.
+    """
+    campi = dict(campi)
+    cambiato = False
+    for chiave, valore in nuovi.items():
+        if valore is None or chiave not in CAMPI:
             continue
+        if chiave == "categoria" and not _stessa_categoria(valore, campi.get("categoria")):
+            campi["sottocategoria"] = ""  # appartiene alla categoria di prima
+        campi[chiave] = valore
+        if chiave != "conferma":
+            cambiato = True
+    if cambiato:
+        campi["conferma"] = ""  # ogni modifica invalida una conferma gia' data
+    return campi
 
-        match_sottocategoria = re.match(r'^      - nome:\s*"(.*)"\s*$', riga)
-        if match_sottocategoria:
-            sottocategoria_corrente = match_sottocategoria.group(1)
-            continue
 
-        if categoria_corrente == categoria:
-            match_sottocategoria_tipo = re.match(r'^        tipo:\s*(\w+)\s*$', riga)
-            if (match_sottocategoria_tipo and sottocategoria
-                    and sottocategoria_corrente == sottocategoria):
-                return match_sottocategoria_tipo.group(1).capitalize()
+def normalizza(campi):
+    """Normalizza i campi e dice qual e' il primo che manca o non va.
 
-            match_categoria_tipo = re.match(r'^    tipo:\s*(\w+)\s*$', riga)
-            if match_categoria_tipo:
-                categoria_tipo = match_categoria_tipo.group(1)
+    Ritorna (campi, stato, rifiutato). `stato` e' None quando e' tutto a posto;
+    `rifiutato` e' il valore grezzo che non si e' capito, per poterlo citare nel
+    messaggio. Solo il campo incriminato viene azzerato: quelli a valle restano,
+    che e' la differenza con il vecchio gateway — li cancellava tutti e il
+    chiamante doveva ricordarseli.
+    """
+    campi = dict(campi)
 
-    if categoria_tipo in ("entrata", "uscita"):
-        return categoria_tipo.capitalize()
-    return False
+    if not campi.get("data"):
+        campi["data"] = datetime.now().strftime("%d/%m/%Y")
+    if not validate_data(campi["data"]):
+        rifiutato, campi["data"] = campi["data"], ""
+        return campi, "chiedi_data", rifiutato
+
+    importo = validate_importo(campi.get("importo", ""))
+    if importo is False:
+        rifiutato, campi["importo"] = campi.get("importo", ""), ""
+        return campi, "chiedi_importo", rifiutato
+    campi["importo"] = importo
+
+    cat = trova_categoria(campi.get("categoria"))
+    if cat is None:
+        rifiutato, campi["categoria"] = campi.get("categoria", ""), ""
+        campi["sottocategoria"] = ""
+        return campi, "chiedi_categoria", rifiutato
+    campi["categoria"] = cat["nome"]
+
+    if not cat["sottocategorie"]:
+        # La categoria non ne prevede: lo decide la tassonomia, non chi chiama.
+        campi["sottocategoria"] = ""
+        sotto = None
+    else:
+        sotto = trova_sottocategoria(cat, campi.get("sottocategoria"))
+        if sotto is None:
+            rifiutato, campi["sottocategoria"] = campi.get("sottocategoria", ""), ""
+            return campi, "chiedi_sottocategoria", rifiutato
+        campi["sottocategoria"] = sotto["nome"]
+
+    if tipo_di(cat, sotto) is None:
+        return campi, "errore_tassonomia", ""
+
+    if campi.get("conferma") != "Si":
+        return campi, "chiedi_conferma", ""
+
+    return campi, None, ""
+
+
+def risolvi_risposta(stato, testo):
+    """Il testo dell'utente diventa il campo che lo script stava aspettando.
+
+    Lo script sa che domanda ha fatto: chi lo chiama non deve indovinare a quale
+    campo appartenga la risposta. E' l'instradamento che prima toccava al
+    modello, ed e' dove sbagliava.
+    """
+    testo = testo.strip()
+    campo = {
+        "chiedi_data": "data",
+        "chiedi_importo": "importo",
+        "chiedi_categoria": "categoria",
+        "chiedi_sottocategoria": "sottocategoria",
+    }.get(stato)
+    if campo:
+        return {campo: testo}
+    if stato == "chiedi_conferma":
+        return {"conferma": interpreta_conferma(testo)}
+    return {}
+
+# ─────────────────────────────────────────────
+# Messaggi: il testo completo da mostrare all'utente
+# ─────────────────────────────────────────────
+
+ETICHETTE = (("Importo", "importo"), ("Data", "data"), ("Tipo", "tipo"),
+             ("Categoria", "categoria"), ("Sottocategoria", "sottocategoria"),
+             ("Descrizione", "descrizione"), ("Note", "note"))
+
+
+def riepilogo(campi, tipo):
+    righe = []
+    for etichetta, chiave in ETICHETTE:
+        if chiave == "tipo":
+            valore = tipo
+        elif chiave == "importo":
+            valore = f"{campi['importo']:.2f} €" if campi.get("importo") != "" else ""
+        else:
+            valore = campi.get(chiave, "")
+        righe.append(f"{etichetta + ':':<16}{valore or '—'}")
+    return "\n".join(righe)
+
+
+def _elenco(voci):
+    """Numerato con l'id della tassonomia, non con la posizione: cosi' il
+    contratto regge anche se un giorno gli id avranno dei buchi."""
+    return "\n".join(f"{v['id']}. {v['nome']}" for v in voci)
+
+
+def componi_messaggio(stato, campi, rifiutato="", tipo="", dettaglio=""):
+    """Il testo intero da mostrare: elenco numerato e riepilogo gia' dentro.
+
+    Chi chiama deve avere esattamente una cosa da stampare, e stamparla deve
+    essere la strada facile. Per lo stesso motivo i messaggi sono battute
+    complete e non frammenti da modulo: "Confermi?" da solo non e' una frase che
+    si possa ripetere, e chi la riceve fa la cosa ragionevole — la riscrive.
+    """
+    if stato == "chiedi_data":
+        if rifiutato:
+            return (f"Non ho capito la data «{rifiutato}». Scrivila come gg/mm/aaaa, "
+                    "per esempio 01/09/2026.")
+        return "Di che giorno è? Scrivilo come gg/mm/aaaa, per esempio 01/09/2026."
+
+    if stato == "chiedi_importo":
+        if rifiutato:
+            return (f"Non ho capito l'importo «{rifiutato}». Scrivi solo la cifra, "
+                    "per esempio 12,50.")
+        return "Qual è l'importo? Scrivi solo la cifra, per esempio 12,50."
+
+    if stato == "chiedi_categoria":
+        testa = f"Non ho trovato la categoria «{rifiutato}».\n\n" if rifiutato else ""
+        return (f"{testa}Quale categoria? Rispondi con il numero.\n\n"
+                + _elenco(leggi_tassonomia()))
+
+    if stato == "chiedi_sottocategoria":
+        cat = trova_categoria(campi.get("categoria"))
+        testa = f"Non ho trovato la sottocategoria «{rifiutato}».\n\n" if rifiutato else ""
+        return (f"{testa}Quale sottocategoria di «{cat['nome']}»? Rispondi con il numero.\n\n"
+                + _elenco(cat["sottocategorie"]))
+
+    if stato == "chiedi_conferma":
+        testa = "Non ho capito. Rispondi sì o no.\n\n" if rifiutato else ""
+        return f"{testa}{riepilogo(campi, tipo)}\n\nConfermi?"
+
+    if stato == "scritto":
+        return f"Registrato.\n\n{riepilogo(campi, tipo)}"
+
+    if stato == "annullata":
+        return "Ok, lascio perdere. Non ho registrato niente."
+
+    if stato in ("bozza_scaduta", "bozza_assente"):
+        return ("Non sto registrando niente al momento. Dimmi cosa devo registrare: "
+                "quanto hai speso e per cosa.")
+
+    if stato == "errore_auth":
+        return ("Non riesco ad accedere al foglio: le credenziali Google vanno "
+                "rigenerate. Non ho registrato niente.")
+
+    if stato == "errore_scrittura":
+        return ("Non sono riuscito a scrivere sul foglio. Non ho registrato niente — "
+                "rispondi «sì» per riprovare.")
+
+    if stato == "scrittura_in_corso":
+        return "Sto già registrando questa transazione: dammi un secondo."
+
+    if stato == "errore_bozza":
+        return ("Non riesco a tenere nota di questa transazione: c'è un problema sul "
+                "server. Non ho registrato niente.")
+
+    if stato == "errore_tassonomia":
+        dove = f"{campi.get('categoria')} / {campi.get('sottocategoria')}".strip(" /")
+        return (f"Non riesco a capire se «{dove}» è un'entrata o un'uscita: la "
+                "tassonomia va corretta. Non ho registrato niente.")
+
+    return dettaglio
 
 # ─────────────────────────────────────────────
 # Operazioni sullo sheet
 # ─────────────────────────────────────────────
-
-def read_categories(access_token):
-    url = (
-        f"https://sheets.googleapis.com/v4/spreadsheets/{SPREADSHEET_ID}"
-        f"/values/{urllib.parse.quote('Categorie!A:B')}"
-    )
-    result, _ = _api_request("GET", url, access_token)
-    rows = result.get("values", [])
-    categories = {}
-    current_cat = None
-    for row in rows[1:]:  # salta intestazione
-        cat = row[0].strip() if len(row) > 0 else ""
-        sub = row[1].strip() if len(row) > 1 else ""
-        if cat:
-            current_cat = cat
-            if current_cat not in categories:
-                categories[current_cat] = []
-        if current_cat and sub and sub != "—":
-            categories[current_cat].append(sub)
-    return categories
-
 
 def append_row(access_token, data, tipo, categoria, sottocategoria, importo, descrizione, note):
     row = [[data, tipo, categoria, sottocategoria, float(importo), descrizione, note]]
@@ -390,61 +699,167 @@ def append_row(access_token, data, tipo, categoria, sottocategoria, importo, des
 # CLI
 # ─────────────────────────────────────────────
 
+EXIT = {
+    "scritto": 0,
+    "errore_auth": 1,
+    "errore_scrittura": 2,
+    "errore_tassonomia": 5,
+    "errore_bozza": 6,
+}
+
+
+def _emetti(stato, campi, rifiutato="", tipo="", intervallo="", opzioni=None):
+    """L'unico JSON su stdout. Sempre le stesse chiavi, sempre lo stato completo."""
+    payload = {
+        "stato": stato,
+        "messaggio": componi_messaggio(stato, campi, rifiutato, tipo),
+        "data": campi.get("data", ""),
+        "importo": campi.get("importo", ""),
+        "categoria": campi.get("categoria", ""),
+        "sottocategoria": campi.get("sottocategoria", ""),
+        "tipo": tipo,
+        "descrizione": campi.get("descrizione", ""),
+        "note": campi.get("note", ""),
+        "conferma": campi.get("conferma", ""),
+        "opzioni": opzioni or [],
+        "intervallo": intervallo,
+    }
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    sys.exit(EXIT.get(stato, 3))
+
+
+def _opzioni_per(stato, campi):
+    """Nel payload solo per test e diagnostica: il testo da mostrare e' gia'
+    tutto dentro "messaggio"."""
+    if stato == "chiedi_categoria":
+        return [c["nome"] for c in leggi_tassonomia()]
+    if stato == "chiedi_sottocategoria":
+        cat = trova_categoria(campi.get("categoria"))
+        return [s["nome"] for s in cat["sottocategorie"]] if cat else []
+    return []
+
+
+class _Parser(argparse.ArgumentParser):
+    def error(self, message):
+        self.print_usage(sys.stderr)
+        print(f"ERRORE uso: {message}", file=sys.stderr)
+        sys.exit(64)
+
+
 def main():
-    parser = argparse.ArgumentParser(
-        description="Budget Familiare — CLI per Google Sheets"
-    )
+    parser = _Parser(description="Budget Familiare — CLI per Google Sheets")
     subparsers = parser.add_subparsers(dest="command")
 
-    subparsers.add_parser("read-categories", help="Leggi categorie/sottocategorie dal foglio")
-
-    p_append = subparsers.add_parser("append", help="Aggiungi una transazione (validata da parse_data)")
-    p_append.add_argument("--data",           default="", help="Data DD/MM/YYYY (default: oggi)")
-    p_append.add_argument("--categoria",      default="", help="Nome o id da references/tassonomia.yaml")
-    p_append.add_argument("--sottocategoria", default="")
-    p_append.add_argument("--importo",        default="", help="Importo positivo (es. 23.50)")
-    p_append.add_argument("--descrizione",    default="")
-    p_append.add_argument("--note",           default="")
-    p_append.add_argument("--conferma",       default="", help='"Si" per eseguire la scrittura')
+    p = subparsers.add_parser("append", help="Registra una transazione, un turno alla volta")
+    p.add_argument("--nuova",   action="store_true", help="Scarta la bozza in corso e ricomincia")
+    p.add_argument("--annulla", action="store_true", help="Abbandona la transazione in corso")
+    p.add_argument("--risposta",       default=None, help="Quello che ha scritto l'utente")
+    p.add_argument("--data",           default=None, help="Data gg/mm/aaaa (default: oggi)")
+    p.add_argument("--categoria",      default=None, help="Nome o id da references/tassonomia.yaml")
+    p.add_argument("--sottocategoria", default=None)
+    p.add_argument("--importo",        default=None, help="Importo positivo (es. 23.50)")
+    p.add_argument("--descrizione",    default=None)
+    p.add_argument("--note",           default=None)
 
     args = parser.parse_args()
+    if args.command != "append":
+        parser.print_usage(sys.stderr)
+        print("ERRORE uso: serve un sottocomando (append)", file=sys.stderr)
+        sys.exit(64)
 
-    risultato = None
-    if args.command == "append":
-        risultato = parse_data(args.data, args.importo, args.categoria, args.sottocategoria, args.conferma)
-        if risultato["messaggio"]:
-            print(json.dumps(risultato, ensure_ascii=False, indent=2))
-            sys.exit(3)
+    with _bozza_lock():
+        if args.annulla:
+            cancella_bozza()
+            _emetti("annullata", campi_vuoti())
+
+        if args.nuova:
+            cancella_bozza()
+
+        bozza = carica_bozza()
+        if isinstance(bozza, dict) and bozza["stato"] == "scrittura_in_corso":
+            # Un'altra invocazione ha gia' mandato questa riga a Google e sta
+            # aspettando la risposta: scriverla di nuovo farebbe un doppione, e
+            # un doppione su un foglio di spese non lo nota nessuno.
+            _emetti("scrittura_in_corso", bozza["campi"])
+
+        if args.risposta is not None and not isinstance(bozza, dict):
+            _emetti("bozza_scaduta" if bozza == "scaduta" else "bozza_assente", campi_vuoti())
+
+        campi = bozza["campi"] if isinstance(bozza, dict) else campi_vuoti()
+        nuovi = {c: getattr(args, c, None) for c in CAMPI if c != "conferma"}
+        if args.risposta is not None:
+            nuovi.update(risolvi_risposta(bozza["stato"], args.risposta))
+
+        conferma_rifiutata = (args.risposta is not None
+                              and bozza["stato"] == "chiedi_conferma"
+                              and nuovi.get("conferma") == "")
+        if nuovi.get("conferma") == "No":
+            # "No" non annulla: tiene data e importo e rifa' la domanda sulla
+            # categoria, che e' l'errore piu' probabile in un riepilogo rifiutato.
+            nuovi.update({"categoria": "", "sottocategoria": "", "conferma": ""})
+
+        campi = unisci(campi, nuovi)
+        campi, stato, rifiutato = normalizza(campi)
+
+        if stato == "chiedi_conferma" and conferma_rifiutata:
+            rifiutato = args.risposta
+
+        def _salva(nuovo_stato):
+            try:
+                salva_bozza(nuovo_stato, campi)
+            except OSError as e:
+                # Senza bozza il dialogo non puo' proseguire: la risposta al turno
+                # dopo non avrebbe piu' un contesto a cui attaccarsi. Meglio dirlo
+                # che fare una domanda di cui si perdera' la risposta.
+                print(f"ERRORE bozza: {e}", file=sys.stderr)
+                _emetti("errore_bozza", campi)
+
+        cat = trova_categoria(campi["categoria"])
+        sotto = trova_sottocategoria(cat, campi["sottocategoria"])
+        tipo = tipo_di(cat, sotto) or ""
+
+        if stato == "errore_tassonomia":
+            # Non e' una domanda ma un errore di configurazione: salvarlo come
+            # stato lascerebbe la bozza in un punto a cui nessuna risposta sa
+            # rispondere. La bozza di prima resta dov'era.
+            _emetti(stato, campi, rifiutato, tipo)
+
+        if stato is not None:
+            _salva(stato)
+            _emetti(stato, campi, rifiutato, tipo, opzioni=_opzioni_per(stato, campi))
+
+        # La riga e' pronta. Si marca la bozza prima di uscire dal lock: se
+        # arrivasse un secondo turno mentre Google risponde, trovera' il marcatore
+        # invece di mandare la stessa riga una seconda volta.
+        _salva("scrittura_in_corso")
+
+    # Fuori dal lock: la chiamata a Google puo' essere lenta, e tenerlo bloccato
+    # qui fermerebbe ogni turno successivo per tutto il TTL.
+    def _fallita(stato_errore, eccezione):
+        print(f"ERRORE {stato_errore.removeprefix('errore_')}: {eccezione}", file=sys.stderr)
+        with _bozza_lock():
+            # Riportata alla conferma, senza il "Si": si riprende con una parola
+            # invece di ridettare tutto, ma la scrittura non riparte da sola.
+            campi["conferma"] = ""
+            with contextlib.suppress(OSError):
+                salva_bozza("chiedi_conferma", campi)
+        _emetti(stato_errore, campi, tipo=tipo)
 
     try:
         token = get_access_token()
-    except RuntimeError as e:
-        print(f"ERRORE autenticazione:\n{e}", file=sys.stderr)
-        sys.exit(1)
     except Exception as e:
-        print(f"ERRORE autenticazione: {e}", file=sys.stderr)
-        sys.exit(1)
+        _fallita("errore_auth", e)
 
-    if args.command == "read-categories":
-        cats = read_categories(token)
-        print(json.dumps(cats, ensure_ascii=False, indent=2))
+    try:
+        intervallo = append_row(token, campi["data"], tipo, campi["categoria"],
+                                campi["sottocategoria"], campi["importo"],
+                                campi["descrizione"], campi["note"])
+    except Exception as e:
+        _fallita("errore_scrittura", e)
 
-    elif args.command == "append":
-        try:
-            updated = append_row(
-                token,
-                risultato["data"], risultato["tipo"], risultato["categoria"],
-                risultato["sottocategoria"], risultato["importo"],
-                args.descrizione, args.note
-            )
-            print(f"OK:{updated}")
-        except RuntimeError as e:
-            print(f"ERRORE scrittura: {e}", file=sys.stderr)
-            sys.exit(2)
-
-    else:
-        parser.print_help()
-        sys.exit(1)
+    with _bozza_lock():
+        cancella_bozza()
+    _emetti("scritto", campi, tipo=tipo, intervallo=intervallo)
 
 
 if __name__ == "__main__":

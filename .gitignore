@@ -1,3 +1,9 @@
 *.pyc
 __pycache__/
 .DS_Store
+
+# Bozza del dialogo: sta fuori dal worktree, ma se un giorno la si spostasse
+# qui dentro la cron di sync la committerebbe insieme alle spese di casa.
+bozza_transazione*
+*.json.lock
+*.tmp
