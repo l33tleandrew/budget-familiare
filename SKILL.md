@@ -31,8 +31,10 @@ Il tuo compito è quindi solo:
 
 1. estrarre dal messaggio i campi che riesci a capire;
 2. chiamare lo script, anche con campi mancanti o incerti;
-3. mostrare all'utente il `messaggio` dello script, aggiungendoci i dati che lo script non
-  può produrre (l'elenco numerato, il riepilogo);
+3. mostrare all'utente il `messaggio` dello script, testo esatto compreso: se il JSON include
+  `opzioni`, elencale numerate a partire da 1 nell'ordine in cui arrivano, mai da
+  `tassonomia.yaml` o a memoria; per `Confermi?` componi tu il riepilogo, l'unica cosa che lo
+  script non può produrre perché include descrizione e note;
 4. richiamare lo script con tutto quello che sai, incluso quello appena raccolto.
 
 Ripeti 2-4 finché lo script non risponde `OK:`. Non decidere tu quando un campo è valido,
@@ -95,8 +97,8 @@ all'utente così com'è e fermati. Non è un caso da ritentare in loop.
 | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `Inserire importo:`                      | Mostra la riga così com'è e aspetta la risposta.                                                                                                                              |
 | `Inserire una data valida (gg/mm/aaaa):` | Mostra la riga così com'è e aspetta la risposta.                                                                                                                              |
-| `Quale categoria vuoi inserire?`         | Mostra la domanda + [elenco categorie](#elenco-categorie) e aspetta il numero.                                                                                                |
-| `Quale sottocategoria vuoi inserire?`    | Mostra la domanda + [elenco sottocategorie](#elenco-sottocategorie) della categoria scelta e aspetta il numero.                                                               |
+| `Quale categoria? Rispondi con il numero.`      | Mostra il messaggio + [elenco categorie](#elenco-categorie) e aspetta il numero.                                                                                      |
+| `Quale sottocategoria? Rispondi con il numero.` | Mostra il messaggio + [elenco sottocategorie](#elenco-sottocategorie) della categoria scelta e aspetta il numero.                                                     |
 | `Confermi?`                              | Mostra il [riepilogo](#riepilogo) compilato con i valori del JSON e aspetta una risposta esplicita. Sì → richiama con `--conferma "Si"`. No → richiama con `--conferma "No"`. |
 
 
@@ -118,53 +120,15 @@ quella vecchia appartiene a un'altra categoria e ti manderebbe nel loop senza us
 
 ### Elenco categorie
 
-Numerato con l'`id` di `references/tassonomia.yaml` (non con la posizione nella lista), così il
-numero che risponde l'utente si può girare allo script tale e quale. Chiudi con
-"Rispondi con il numero.":
-
-```
-Quale categoria vuoi inserire?
-1. Stipendio
-2. Supermercato
-3. Cibo fuori / bevute
-4. Auto / Moto
-5. Sport
-6. Casa
-7. Abbigliamento
-8. Abbonamenti
-9. Divertimento
-10. Investimento
-11. Regali
-12. Viaggi
-13. Cura / Benessere
-14. Trasporto pubblico
-15. Salute
-16. Cultura
-17. Beneficienza
-
-Rispondi con il numero.
-```
-
-
+Numerato nell'ordine di `opzioni` nel JSON (è già l'ordine degli id di
+`references/tassonomia.yaml`, così il numero scelto dall'utente si gira allo script tale e
+quale). Non consultare `tassonomia.yaml` né la memoria per questo elenco: l'unica fonte è
+`opzioni`.
 
 ### Elenco sottocategorie
 
-Stessa logica, con gli `id` delle sottocategorie della categoria scelta (ripartono da 1 per ogni
-categoria):
-
-```
-Quale sottocategoria vuoi inserire?
-La categoria scelta è Cibo fuori / bevute.
-1. Asporto
-2. Bar
-3. Da amici
-4. Fast food
-5. Ristorante
-6. Bevuta
-7. Altro
-
-Rispondi con il numero.
-```
+Stessa logica, con `opzioni` della categoria scelta: le sue sottocategorie, già nell'ordine
+dei loro id.
 
 
 
@@ -261,8 +225,9 @@ sbaglia.
 scegliere — in quel caso lascia vuoto e fatti fare la domanda dallo script.
 
 ⚠ Se passi una sottocategoria a una categoria che non ne prevede (per esempio `Supermercato`),
-lo script chiede `Quale sottocategoria vuoi inserire?` e non c'è niente da elencare: sei in un
-loop senza uscita. Quando la categoria ha `sottocategorie: []`, passa `--sottocategoria ""`.
+lo script chiede `Quale sottocategoria? Rispondi con il numero.` e non c'è niente da elencare
+(`opzioni` arriva vuota): sei in un loop senza uscita. Quando la categoria ha
+`sottocategorie: []`, passa `--sottocategoria ""`.
 
 ### `--descrizione`
 

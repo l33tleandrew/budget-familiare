@@ -11,7 +11,8 @@ Uso:
   0  scritto
   1  errore di autenticazione
   2  errore di scrittura sul foglio
-  3  gateway bloccato: stampa un JSON con "messaggio", nulla è stato scritto.
+  3  gateway bloccato: stampa un JSON con "messaggio" (ed eventualmente
+     "opzioni", l'elenco tra cui scegliere), nulla è stato scritto.
      Richiamare con i campi aggiornati (categoria/sottocategoria accettano
      anche l'id numerico di tassonomia.yaml); una volta che l'utente conferma,
      richiamare di nuovo aggiungendo --conferma "Si".
@@ -128,10 +129,11 @@ def _api_request(method, url, access_token, body=None, _retry=True):
 def parse_data(data, importo, categoria, sottocategoria, conferma):
     """Gateway di validazione: un campo alla volta, come una conversazione.
 
-    Ritorna sempre un dict con le stesse 7 chiavi. "messaggio" e' vuoto solo
+    Ritorna sempre un dict con le stesse 8 chiavi. "messaggio" e' vuoto solo
     quando conferma == "Si" e tutti i campi sono validi: in quel caso il dict
     contiene i valori pronti per append_row. Altrimenti "messaggio" indica
-    cosa manca o non e' conforme, e nulla va scritto sul foglio.
+    cosa manca o non e' conforme, "opzioni" elenca (se pertinente) i valori
+    validi tra cui scegliere, e nulla va scritto sul foglio.
     """
     if not data:
         data = datetime.now().strftime("%d/%m/%Y")
@@ -139,6 +141,7 @@ def parse_data(data, importo, categoria, sottocategoria, conferma):
         return {
             "data": "", "importo": "", "categoria": "", "sottocategoria": "",
             "tipo": "", "conferma": "", "messaggio": "Inserire una data valida (gg/mm/aaaa):",
+            "opzioni": [],
         }
 
     importo = validate_importo(str(importo))
@@ -146,6 +149,7 @@ def parse_data(data, importo, categoria, sottocategoria, conferma):
         return {
             "data": data, "importo": "", "categoria": "", "sottocategoria": "",
             "tipo": "", "conferma": "", "messaggio": "Inserire importo:",
+            "opzioni": [],
         }
 
     categoria = validate_categoria(categoria)
@@ -154,13 +158,15 @@ def parse_data(data, importo, categoria, sottocategoria, conferma):
     if categoria is False:
         return {
             "data": data, "importo": importo, "categoria": "", "sottocategoria": "",
-            "tipo": "", "conferma": "", "messaggio": "Quale categoria vuoi inserire?",
+            "tipo": "", "conferma": "", "messaggio": "Quale categoria? Rispondi con il numero.",
+            "opzioni": list(get_taxonomy_map().keys()),
         }
 
     if sottocategoria is False:
         return {
             "data": data, "importo": importo, "categoria": categoria, "sottocategoria": "",
-            "tipo": "", "conferma": "", "messaggio": "Quale sottocategoria vuoi inserire?",
+            "tipo": "", "conferma": "", "messaggio": "Quale sottocategoria? Rispondi con il numero.",
+            "opzioni": get_taxonomy_map().get(categoria, []),
         }
 
     tipo = get_tipo(categoria, sottocategoria)
@@ -171,12 +177,12 @@ def parse_data(data, importo, categoria, sottocategoria, conferma):
     if conferma == "Si":
         return {
             "data": data, "importo": importo, "categoria": categoria, "sottocategoria": sottocategoria,
-            "tipo": tipo, "conferma": "Si", "messaggio": "",
+            "tipo": tipo, "conferma": "Si", "messaggio": "", "opzioni": [],
         }
 
     return {
         "data": data, "importo": importo, "categoria": categoria, "sottocategoria": sottocategoria,
-        "tipo": tipo, "conferma": "", "messaggio": "Confermi?",
+        "tipo": tipo, "conferma": "", "messaggio": "Confermi?", "opzioni": [],
     }
 
 # ─────────────────────────────────────────────
