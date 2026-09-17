@@ -1,0 +1,539 @@
+{
+  "_come_si_legge": [
+    "Un solo dataset per due livelli di eval.",
+    "eval_protocollo.py parte da 'interpretazione' come se la skill avesse gia' letto il",
+    "messaggio, rigioca la conversazione contro il vero gateway di validazione con la",
+    "scrittura su Sheets sostituita da uno stub, e verifica 'messaggi_attesi', 'esito' e",
+    "'riga_attesa'.",
+    "eval_modello.py da' 'messaggio' a un modello insieme a SKILL.md e alla tassonomia e",
+    "verifica che ne ricavi 'interpretazione'; salta i casi con valuta_interpretazione=false,",
+    "che partono da un'interpretazione sbagliata apposta per provare il recupero.",
+    "'OGGI' nei valori attesi vale la data odierna del sistema.",
+    "In 'interpretazione', \"\" significa: campo non deducibile dal messaggio, da omettere."
+  ],
+  "casi": [
+    {
+      "id": "ristorante-completo",
+      "descrizione": "Tutto deducibile dal messaggio: un solo giro, poi conferma.",
+      "messaggio": "cena al ristorante da Nino, 30 euro",
+      "interpretazione": {
+        "data": "",
+        "categoria": "Cibo fuori / bevute",
+        "sottocategoria": "Ristorante",
+        "importo": "30.00",
+        "descrizione": "Cena al ristorante da Nino"
+      },
+      "valuta_interpretazione": true,
+      "risposte": [
+        "sì"
+      ],
+      "stati_attesi": [
+        "chiedi_conferma"
+      ],
+      "esito": "scritta",
+      "riga_attesa": {
+        "data": "OGGI",
+        "tipo": "Uscita",
+        "categoria": "Cibo fuori / bevute",
+        "sottocategoria": "Ristorante",
+        "importo": 30.0
+      }
+    },
+    {
+      "id": "categoria-da-chiedere",
+      "descrizione": "Messaggio ambiguo: categoria e sottocategoria le chiede lo script.",
+      "messaggio": "cena fuori 30",
+      "interpretazione": {
+        "data": "",
+        "categoria": "",
+        "sottocategoria": "",
+        "importo": "30.00",
+        "descrizione": "Cena fuori"
+      },
+      "valuta_interpretazione": false,
+      "risposte": [
+        "3",
+        "5",
+        "sì"
+      ],
+      "stati_attesi": [
+        "chiedi_categoria",
+        "chiedi_sottocategoria",
+        "chiedi_conferma"
+      ],
+      "esito": "scritta",
+      "riga_attesa": {
+        "data": "OGGI",
+        "tipo": "Uscita",
+        "categoria": "Cibo fuori / bevute",
+        "sottocategoria": "Ristorante",
+        "importo": 30.0
+      }
+    },
+    {
+      "id": "benzina",
+      "descrizione": "Sottocategoria implicita nella parola stessa.",
+      "messaggio": "stamattina ho fatto benzina, cinquanta euro",
+      "interpretazione": {
+        "data": "",
+        "categoria": "Auto / Moto",
+        "sottocategoria": "Benzina",
+        "importo": "50.00",
+        "descrizione": "Benzina"
+      },
+      "valuta_interpretazione": true,
+      "risposte": [
+        "sì"
+      ],
+      "stati_attesi": [
+        "chiedi_conferma"
+      ],
+      "esito": "scritta",
+      "riga_attesa": {
+        "data": "OGGI",
+        "tipo": "Uscita",
+        "categoria": "Auto / Moto",
+        "sottocategoria": "Benzina",
+        "importo": 50.0
+      }
+    },
+    {
+      "id": "categoria-senza-sottocategorie",
+      "descrizione": "Supermercato non prevede sottocategorie: deve restare vuota.",
+      "messaggio": "spesa al supermercato 85,40",
+      "interpretazione": {
+        "data": "",
+        "categoria": "Supermercato",
+        "sottocategoria": "",
+        "importo": "85.40",
+        "descrizione": "Spesa al supermercato"
+      },
+      "valuta_interpretazione": true,
+      "risposte": [
+        "sì"
+      ],
+      "stati_attesi": [
+        "chiedi_conferma"
+      ],
+      "esito": "scritta",
+      "riga_attesa": {
+        "data": "OGGI",
+        "tipo": "Uscita",
+        "categoria": "Supermercato",
+        "sottocategoria": "",
+        "importo": 85.4
+      }
+    },
+    {
+      "id": "stipendio-entrata",
+      "descrizione": "Il tipo Entrata lo deve mettere lo script, non la skill.",
+      "messaggio": "è arrivato lo stipendio, 2200",
+      "interpretazione": {
+        "data": "",
+        "categoria": "Stipendio",
+        "sottocategoria": "",
+        "importo": "2200.00",
+        "descrizione": "Stipendio"
+      },
+      "valuta_interpretazione": true,
+      "risposte": [
+        "sì"
+      ],
+      "stati_attesi": [
+        "chiedi_conferma"
+      ],
+      "esito": "scritta",
+      "riga_attesa": {
+        "data": "OGGI",
+        "tipo": "Entrata",
+        "categoria": "Stipendio",
+        "sottocategoria": "",
+        "importo": 2200.0
+      }
+    },
+    {
+      "id": "investimento-dividendi",
+      "descrizione": "Categoria 'entrambi': il tipo Entrata arriva dalla sottocategoria.",
+      "messaggio": "accreditati 120 di dividendi",
+      "interpretazione": {
+        "data": "",
+        "categoria": "Investimento",
+        "sottocategoria": "Dividendi",
+        "importo": "120.00",
+        "descrizione": "Dividendi accreditati"
+      },
+      "valuta_interpretazione": true,
+      "risposte": [
+        "sì"
+      ],
+      "stati_attesi": [
+        "chiedi_conferma"
+      ],
+      "esito": "scritta",
+      "riga_attesa": {
+        "data": "OGGI",
+        "tipo": "Entrata",
+        "categoria": "Investimento",
+        "sottocategoria": "Dividendi",
+        "importo": 120.0
+      }
+    },
+    {
+      "id": "investimento-pac",
+      "descrizione": "Stessa categoria 'entrambi', sottocategoria di segno opposto.",
+      "messaggio": "versati 300 sul PAC",
+      "interpretazione": {
+        "data": "",
+        "categoria": "Investimento",
+        "sottocategoria": "PAC",
+        "importo": "300.00",
+        "descrizione": "Versamento PAC"
+      },
+      "valuta_interpretazione": true,
+      "risposte": [
+        "sì"
+      ],
+      "stati_attesi": [
+        "chiedi_conferma"
+      ],
+      "esito": "scritta",
+      "riga_attesa": {
+        "data": "OGGI",
+        "tipo": "Uscita",
+        "categoria": "Investimento",
+        "sottocategoria": "PAC",
+        "importo": 300.0
+      }
+    },
+    {
+      "id": "data-esplicita",
+      "descrizione": "Data nel messaggio: vince su oggi.",
+      "messaggio": "il 12/09/2026 ho pagato il bollo, 180",
+      "interpretazione": {
+        "data": "12/09/2026",
+        "categoria": "Auto / Moto",
+        "sottocategoria": "Bollo",
+        "importo": "180.00",
+        "descrizione": "Bollo auto"
+      },
+      "valuta_interpretazione": true,
+      "risposte": [
+        "sì"
+      ],
+      "stati_attesi": [
+        "chiedi_conferma"
+      ],
+      "esito": "scritta",
+      "riga_attesa": {
+        "data": "12/09/2026",
+        "tipo": "Uscita",
+        "categoria": "Auto / Moto",
+        "sottocategoria": "Bollo",
+        "importo": 180.0
+      }
+    },
+    {
+      "id": "importo-migliaia",
+      "descrizione": "1.500 nel messaggio sono millecinquecento: si passa tale e quale, e il punto delle migliaia lo scioglie lo script.",
+      "messaggio": "pagata la rata del mutuo, 1.500",
+      "interpretazione": {
+        "data": "",
+        "categoria": "Casa",
+        "sottocategoria": "Rata mutuo",
+        "importo": "1.500",
+        "descrizione": "Rata mutuo"
+      },
+      "valuta_interpretazione": true,
+      "risposte": [
+        "sì"
+      ],
+      "stati_attesi": [
+        "chiedi_conferma"
+      ],
+      "esito": "scritta",
+      "riga_attesa": {
+        "data": "OGGI",
+        "tipo": "Uscita",
+        "categoria": "Casa",
+        "sottocategoria": "Rata mutuo",
+        "importo": 1500.0
+      }
+    },
+    {
+      "id": "importo-mancante",
+      "descrizione": "Nessuna cifra nel messaggio: lo script la chiede, l'utente risponde in italiano.",
+      "messaggio": "ho preso un caffè al bar",
+      "interpretazione": {
+        "data": "",
+        "categoria": "Cibo fuori / bevute",
+        "sottocategoria": "Bar",
+        "importo": "",
+        "descrizione": "Caffè al bar"
+      },
+      "valuta_interpretazione": true,
+      "risposte": [
+        "1,20",
+        "sì"
+      ],
+      "stati_attesi": [
+        "chiedi_importo",
+        "chiedi_conferma"
+      ],
+      "esito": "scritta",
+      "riga_attesa": {
+        "data": "OGGI",
+        "tipo": "Uscita",
+        "categoria": "Cibo fuori / bevute",
+        "sottocategoria": "Bar",
+        "importo": 1.2
+      }
+    },
+    {
+      "id": "recupero-data-non-valida",
+      "descrizione": "Interpretazione sbagliata apposta: data inesistente, poi corretta.",
+      "messaggio": "il 31 febbraio ho pagato la palestra, 45",
+      "interpretazione": {
+        "data": "31/02/2026",
+        "categoria": "Sport",
+        "sottocategoria": "Palestra",
+        "importo": "45.00",
+        "descrizione": "Palestra"
+      },
+      "valuta_interpretazione": false,
+      "risposte": [
+        "12/09/2026",
+        "sì"
+      ],
+      "stati_attesi": [
+        "chiedi_data",
+        "chiedi_conferma"
+      ],
+      "esito": "scritta",
+      "riga_attesa": {
+        "data": "12/09/2026",
+        "tipo": "Uscita",
+        "categoria": "Sport",
+        "sottocategoria": "Palestra",
+        "importo": 45.0
+      }
+    },
+    {
+      "id": "recupero-importo-con-valuta",
+      "descrizione": "Interpretazione sbagliata apposta: simbolo di valuta nell'importo.",
+      "messaggio": "taglio capelli 30 €",
+      "interpretazione": {
+        "data": "",
+        "categoria": "Cura / Benessere",
+        "sottocategoria": "Taglio capelli",
+        "importo": "30 €",
+        "descrizione": "Taglio capelli"
+      },
+      "valuta_interpretazione": false,
+      "risposte": [
+        "30",
+        "sì"
+      ],
+      "stati_attesi": [
+        "chiedi_importo",
+        "chiedi_conferma"
+      ],
+      "esito": "scritta",
+      "riga_attesa": {
+        "data": "OGGI",
+        "tipo": "Uscita",
+        "categoria": "Cura / Benessere",
+        "sottocategoria": "Taglio capelli",
+        "importo": 30.0
+      }
+    },
+    {
+      "id": "conferma-negata-e-corretta",
+      "descrizione": "L'utente rifiuta il riepilogo: si riparte dalla categoria e la vecchia sottocategoria va dimenticata.",
+      "messaggio": "cena 25",
+      "interpretazione": {
+        "data": "",
+        "categoria": "Supermercato",
+        "sottocategoria": "",
+        "importo": "25.00",
+        "descrizione": "Cena"
+      },
+      "valuta_interpretazione": false,
+      "risposte": [
+        "no",
+        "3",
+        "5",
+        "sì"
+      ],
+      "stati_attesi": [
+        "chiedi_conferma",
+        "chiedi_categoria",
+        "chiedi_sottocategoria",
+        "chiedi_conferma"
+      ],
+      "esito": "scritta",
+      "riga_attesa": {
+        "data": "OGGI",
+        "tipo": "Uscita",
+        "categoria": "Cibo fuori / bevute",
+        "sottocategoria": "Ristorante",
+        "importo": 25.0
+      }
+    },
+    {
+      "id": "mai-confermata",
+      "descrizione": "Senza un sì esplicito non si scrive niente: e' il gating della conferma.",
+      "messaggio": "spesa 40",
+      "interpretazione": {
+        "data": "",
+        "categoria": "Supermercato",
+        "sottocategoria": "",
+        "importo": "40.00",
+        "descrizione": "Spesa"
+      },
+      "valuta_interpretazione": true,
+      "risposte": [],
+      "stati_attesi": [
+        "chiedi_conferma"
+      ],
+      "esito": "non_scritta",
+      "riga_attesa": null
+    },
+    {
+      "id": "trappola-sottocategoria-inesistente",
+      "descrizione": "Sottocategoria passata a una categoria che non ne prevede: prima lo script la richiedeva all'infinito senza niente da elencare, ora la ignora perche' lo decide la tassonomia.",
+      "messaggio": "spesa 85",
+      "interpretazione": {
+        "data": "",
+        "categoria": "Supermercato",
+        "sottocategoria": "Altro",
+        "importo": "85.00",
+        "descrizione": "Spesa"
+      },
+      "valuta_interpretazione": false,
+      "risposte": [
+        "sì"
+      ],
+      "stati_attesi": [
+        "chiedi_conferma"
+      ],
+      "esito": "scritta",
+      "riga_attesa": {
+        "data": "OGGI",
+        "tipo": "Uscita",
+        "categoria": "Supermercato",
+        "sottocategoria": "",
+        "importo": 85.0
+      }
+    },
+    {
+      "id": "conferma-con-ok",
+      "descrizione": "La conferma non e' una parola sola: 'ok' vale quanto 'si'.",
+      "messaggio": "spesa 20",
+      "interpretazione": {
+        "data": "",
+        "categoria": "Supermercato",
+        "sottocategoria": "",
+        "importo": "20.00",
+        "descrizione": "Spesa"
+      },
+      "valuta_interpretazione": false,
+      "risposte": [
+        "ok"
+      ],
+      "stati_attesi": [
+        "chiedi_conferma"
+      ],
+      "esito": "scritta",
+      "riga_attesa": {
+        "data": "OGGI",
+        "tipo": "Uscita",
+        "categoria": "Supermercato",
+        "sottocategoria": "",
+        "importo": 20.0
+      }
+    },
+    {
+      "id": "conferma-accentata",
+      "descrizione": "'Sì' con l'accento e la maiuscola: l'utente scrive in italiano.",
+      "messaggio": "benzina 60",
+      "interpretazione": {
+        "data": "",
+        "categoria": "Auto / Moto",
+        "sottocategoria": "Benzina",
+        "importo": "60.00",
+        "descrizione": "Benzina"
+      },
+      "valuta_interpretazione": false,
+      "risposte": [
+        "Sì"
+      ],
+      "stati_attesi": [
+        "chiedi_conferma"
+      ],
+      "esito": "scritta",
+      "riga_attesa": {
+        "data": "OGGI",
+        "tipo": "Uscita",
+        "categoria": "Auto / Moto",
+        "sottocategoria": "Benzina",
+        "importo": 60.0
+      }
+    },
+    {
+      "id": "conferma-non-capita",
+      "descrizione": "Una risposta che non e' ne' si' ne' no rimostra il riepilogo, non scrive.",
+      "messaggio": "spesa 15",
+      "interpretazione": {
+        "data": "",
+        "categoria": "Supermercato",
+        "sottocategoria": "",
+        "importo": "15.00",
+        "descrizione": "Spesa"
+      },
+      "valuta_interpretazione": false,
+      "risposte": [
+        "boh",
+        "sì"
+      ],
+      "stati_attesi": [
+        "chiedi_conferma",
+        "chiedi_conferma"
+      ],
+      "esito": "scritta",
+      "riga_attesa": {
+        "data": "OGGI",
+        "tipo": "Uscita",
+        "categoria": "Supermercato",
+        "sottocategoria": "",
+        "importo": 15.0
+      }
+    },
+    {
+      "id": "categoria-minuscola",
+      "descrizione": "Il nome di categoria scritto in minuscolo si risolve lo stesso.",
+      "messaggio": "pranzo al bar 8,50",
+      "interpretazione": {
+        "data": "",
+        "categoria": "cibo fuori / bevute",
+        "sottocategoria": "bar",
+        "importo": "8.50",
+        "descrizione": "Pranzo al bar"
+      },
+      "valuta_interpretazione": false,
+      "risposte": [
+        "sì"
+      ],
+      "stati_attesi": [
+        "chiedi_conferma"
+      ],
+      "esito": "scritta",
+      "riga_attesa": {
+        "data": "OGGI",
+        "tipo": "Uscita",
+        "categoria": "Cibo fuori / bevute",
+        "sottocategoria": "Bar",
+        "importo": 8.5
+      }
+    }
+  ]
+}
