@@ -31,24 +31,28 @@ Exit code:
 """
 import json, os, re, sys, argparse, urllib.request, urllib.parse, time
 import contextlib, fcntl, tempfile, unicodedata
-from datetime import datetime
+from datetime import datetime, timedelta
 
 PROFILE_DIR      = "/opt/data/profiles/budgetingagent"
 TOKEN_FILE       = f"{PROFILE_DIR}/google_token.json"
 CRED_FILE        = f"{PROFILE_DIR}/google_client_secret.json"
 SPREADSHEET_ID   = "1iDYzjzyu_du_axBmzOzI6k4DrzV2Y52_UZTFMtM6JB0"
 SHEET_NAME       = "Transazioni 2026"
-TASSONOMIA_FILE  = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "references", "tassonomia.yaml")
+TASSONOMIA_FILE  = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tassonomia.yaml")
 
 
 def _bozza_predefinita():
-    """La bozza sta in PROFILE_DIR, due livelli SOPRA il worktree git.
+    """La bozza sta in PROFILE_DIR, FUORI dal worktree git.
 
-    sync_budget_skill.sh fa `git add -A` dentro la directory della skill: un
+    sync_budget_skill.sh fa `git add -A` dentro la directory del plugin: un
     percorso fuori dal worktree e' irraggiungibile, non solo ignorato. E' una
     garanzia piu' forte di una riga in .gitignore, che un `git add -f` o un
     merge sbagliato vanificherebbero — e qui dentro c'e' lo storico di spesa
     della famiglia.
+
+    C'e' una seconda ragione, arrivata col plugin: Hermes *sostituisce* la
+    directory del plugin a ogni update. Lo stato di un dialogo a meta' scritto
+    li' dentro sparirebbe insieme alla vecchia versione.
     """
     if os.path.isdir(PROFILE_DIR):
         return os.path.join(PROFILE_DIR, "bozza_transazione.json")
@@ -344,6 +348,43 @@ def validate_data(data):
         return False
 
 
+_GIORNI = ("lunedi", "martedi", "mercoledi", "giovedi", "venerdi", "sabato", "domenica")
+
+_GIORNI_FA = {"oggi": 0, "ieri": 1, "altro ieri": 2, "avantieri": 2, "avant ieri": 2}
+
+
+def normalizza_data_relativa(testo, oggi=None):
+    """"ieri", "lunedi scorso" e simili diventano gg/mm/aaaa. Il resto passa intatto.
+
+    Questa regola stava nel prompt, sotto forma di `date -d yesterday` fatto
+    shellare al modello: una regola in piu' che puo' saltare, e che saltando non
+    fa rumore. Qui c'e' un posto solo e un test accanto.
+
+    `oggi` e' iniettabile perche' un test che dipende dall'orologio fallisce a
+    mezzanotte e nessuno capisce perche'. Non si guarda avanti: una spesa la si
+    registra dopo averla fatta, e "domani" in un messaggio di spesa e' quasi
+    sempre un errore di battitura, non una data.
+    """
+    if not isinstance(testo, str):
+        return testo
+    oggi = oggi or datetime.now()
+
+    piatto = _piatto(testo).replace("'", " ")
+    piatto = re.sub(r"^(l|lo|il|la) ", "", re.sub(r"\s+", " ", piatto).strip())
+
+    if piatto in _GIORNI_FA:
+        return (oggi - timedelta(days=_GIORNI_FA[piatto])).strftime("%d/%m/%Y")
+
+    giorni = "|".join(_GIORNI)
+    m = re.fullmatch(rf"(?:scorso |ultimo )?({giorni})(?: (?:scorso|passato))?", piatto)
+    if m:
+        # "lunedi scorso" detto di lunedi e' quello di sette giorni fa, non oggi.
+        indietro = (oggi.weekday() - _GIORNI.index(m.group(1))) % 7 or 7
+        return (oggi - timedelta(days=indietro)).strftime("%d/%m/%Y")
+
+    return testo
+
+
 def validate_tipo(tipo):
     """Verifica che la stringa sia esattamente 'Entrata' o 'Uscita'."""
     return tipo in ("Entrata", "Uscita")
@@ -366,6 +407,14 @@ def validate_importo(importo):
         s = s.replace(".", "").replace(",", ".")
     elif re.fullmatch(r"\d+,\d+", s):
         s = s.replace(",", ".")
+    elif re.fullmatch(r"\d{1,3}(\.\d{3})+", s):
+        # 1.500 → 1500, 1.200.000 → 1200000. Senza questo ramo cadrebbe nel
+        # fallback qui sotto e varrebbe 1.5: e' il motivo per cui in SKILL.md
+        # c'era una tabella delle migliaia che il modello applicava a memoria.
+        # In assoluto "1.500" resta ambiguo (potrebbe essere 1,5 all'inglese),
+        # ma e' un'ambiguita' irriducibile: il punto e' che ora sta in un posto
+        # solo, con un test accanto.
+        s = s.replace(".", "")
     elif re.fullmatch(r"\d+", s):
         pass
     elif not re.fullmatch(r"\d+\.\d+", s):
@@ -529,6 +578,7 @@ def normalizza(campi):
 
     if not campi.get("data"):
         campi["data"] = datetime.now().strftime("%d/%m/%Y")
+    campi["data"] = normalizza_data_relativa(campi["data"])
     if not validate_data(campi["data"]):
         rifiutato, campi["data"] = campi["data"], ""
         return campi, "chiedi_data", rifiutato
@@ -708,8 +758,22 @@ EXIT = {
 }
 
 
+class _Risultato(Exception):
+    """Il payload di un turno, sollevato per srotolare fin fuori dai lock.
+
+    Qui prima c'era sys.exit(): perfetto per la CLI, e rendeva lo script
+    inutilizzabile da dentro un processo che non deve morire — l'handler di un
+    tool, per dire. Un'eccezione srotola le `with _bozza_lock()` esattamente
+    come faceva SystemExit, quindi il lock si rilascia come prima.
+    """
+
+    def __init__(self, payload):
+        super().__init__(payload["stato"])
+        self.payload = payload
+
+
 def _emetti(stato, campi, rifiutato="", tipo="", intervallo="", opzioni=None):
-    """L'unico JSON su stdout. Sempre le stesse chiavi, sempre lo stato completo."""
+    """L'unico payload del turno. Sempre le stesse chiavi, sempre lo stato completo."""
     payload = {
         "stato": stato,
         "messaggio": componi_messaggio(stato, campi, rifiutato, tipo),
@@ -724,8 +788,7 @@ def _emetti(stato, campi, rifiutato="", tipo="", intervallo="", opzioni=None):
         "opzioni": opzioni or [],
         "intervallo": intervallo,
     }
-    print(json.dumps(payload, ensure_ascii=False, indent=2))
-    sys.exit(EXIT.get(stato, 3))
+    raise _Risultato(payload)
 
 
 def _opzioni_per(stato, campi):
@@ -746,33 +809,59 @@ class _Parser(argparse.ArgumentParser):
         sys.exit(64)
 
 
-def main():
-    parser = _Parser(description="Budget Familiare — CLI per Google Sheets")
-    subparsers = parser.add_subparsers(dest="command")
+def stato_corrente():
+    """Lo stato della bozza su disco, o "" se non ce n'e' una viva.
 
-    p = subparsers.add_parser("append", help="Registra una transazione, un turno alla volta")
-    p.add_argument("--nuova",   action="store_true", help="Scarta la bozza in corso e ricomincia")
-    p.add_argument("--annulla", action="store_true", help="Abbandona la transazione in corso")
-    p.add_argument("--risposta",       default=None, help="Quello che ha scritto l'utente")
-    p.add_argument("--data",           default=None, help="Data gg/mm/aaaa (default: oggi)")
-    p.add_argument("--categoria",      default=None, help="Nome o id da references/tassonomia.yaml")
-    p.add_argument("--sottocategoria", default=None)
-    p.add_argument("--importo",        default=None, help="Importo positivo (es. 23.50)")
-    p.add_argument("--descrizione",    default=None)
-    p.add_argument("--note",           default=None)
+    Serve a chi deve decidere qualcosa *prima* di chiamare `esegui()` — se il
+    turno e' una continuazione o una transazione nuova, per esempio: la risposta
+    e' sempre qui, non nella memoria di chi chiama. Prende il lock e lo rilascia
+    prima di ritornare: `_bozza_lock` apre un fd nuovo a ogni chiamata e usa
+    flock, quindi una riacquisizione annidata nello stesso processo si
+    impianterebbe.
+    """
+    with _bozza_lock():
+        bozza = carica_bozza()
+    return bozza["stato"] if isinstance(bozza, dict) else ""
 
-    args = parser.parse_args()
-    if args.command != "append":
-        parser.print_usage(sys.stderr)
-        print("ERRORE uso: serve un sottocomando (append)", file=sys.stderr)
-        sys.exit(64)
+
+def in_dialogo():
+    """C'e' una transazione a meta'?
+
+    E' l'unica domanda che serve per instradare un turno, e la risposta sta sul
+    disco: non la si chiede a chi chiama e non la si tiene in sessione.
+    """
+    return stato_corrente().startswith("chiedi_")
+
+
+def esegui(*, nuova=False, annulla=False, risposta=None, data=None, importo=None,
+           categoria=None, sottocategoria=None, descrizione=None, note=None):
+    """Un turno di dialogo. Ritorna il payload: non stampa e non esce.
+
+    E' il punto d'ingresso per chi chiama lo script da dentro un processo. La
+    CLI ci passa sopra come chiunque altro, cosi' non ci sono due strade che
+    possono divergere.
+    """
+    try:
+        _turno(nuova=nuova, annulla=annulla, risposta=risposta, data=data,
+               importo=importo, categoria=categoria, sottocategoria=sottocategoria,
+               descrizione=descrizione, note=note)
+    except _Risultato as risultato:
+        return risultato.payload
+    raise AssertionError("_turno finisce sempre con _emetti")
+
+
+def _turno(*, nuova, annulla, risposta, data, importo, categoria,
+           sottocategoria, descrizione, note):
+    passati = {"data": data, "importo": importo, "categoria": categoria,
+               "sottocategoria": sottocategoria, "descrizione": descrizione,
+               "note": note}
 
     with _bozza_lock():
-        if args.annulla:
+        if annulla:
             cancella_bozza()
             _emetti("annullata", campi_vuoti())
 
-        if args.nuova:
+        if nuova:
             cancella_bozza()
 
         bozza = carica_bozza()
@@ -782,15 +871,15 @@ def main():
             # un doppione su un foglio di spese non lo nota nessuno.
             _emetti("scrittura_in_corso", bozza["campi"])
 
-        if args.risposta is not None and not isinstance(bozza, dict):
+        if risposta is not None and not isinstance(bozza, dict):
             _emetti("bozza_scaduta" if bozza == "scaduta" else "bozza_assente", campi_vuoti())
 
         campi = bozza["campi"] if isinstance(bozza, dict) else campi_vuoti()
-        nuovi = {c: getattr(args, c, None) for c in CAMPI if c != "conferma"}
-        if args.risposta is not None:
-            nuovi.update(risolvi_risposta(bozza["stato"], args.risposta))
+        nuovi = {c: passati.get(c) for c in CAMPI if c != "conferma"}
+        if risposta is not None:
+            nuovi.update(risolvi_risposta(bozza["stato"], risposta))
 
-        conferma_rifiutata = (args.risposta is not None
+        conferma_rifiutata = (risposta is not None
                               and bozza["stato"] == "chiedi_conferma"
                               and nuovi.get("conferma") == "")
         if nuovi.get("conferma") == "No":
@@ -802,7 +891,7 @@ def main():
         campi, stato, rifiutato = normalizza(campi)
 
         if stato == "chiedi_conferma" and conferma_rifiutata:
-            rifiutato = args.risposta
+            rifiutato = risposta
 
         def _salva(nuovo_stato):
             try:
@@ -860,6 +949,36 @@ def main():
     with _bozza_lock():
         cancella_bozza()
     _emetti("scritto", campi, tipo=tipo, intervallo=intervallo)
+
+
+def main():
+    """La CLI: parsing, un JSON su stdout, un exit code. Nient'altro."""
+    parser = _Parser(description="Budget Familiare — CLI per Google Sheets")
+    subparsers = parser.add_subparsers(dest="command")
+
+    p = subparsers.add_parser("append", help="Registra una transazione, un turno alla volta")
+    p.add_argument("--nuova",   action="store_true", help="Scarta la bozza in corso e ricomincia")
+    p.add_argument("--annulla", action="store_true", help="Abbandona la transazione in corso")
+    p.add_argument("--risposta",       default=None, help="Quello che ha scritto l'utente")
+    p.add_argument("--data",           default=None, help="Data gg/mm/aaaa, o \"ieri\" (default: oggi)")
+    p.add_argument("--categoria",      default=None, help="Nome o id da references/tassonomia.yaml")
+    p.add_argument("--sottocategoria", default=None)
+    p.add_argument("--importo",        default=None, help="Importo positivo (es. 23.50)")
+    p.add_argument("--descrizione",    default=None)
+    p.add_argument("--note",           default=None)
+
+    args = parser.parse_args()
+    if args.command != "append":
+        parser.print_usage(sys.stderr)
+        print("ERRORE uso: serve un sottocomando (append)", file=sys.stderr)
+        sys.exit(64)
+
+    payload = esegui(nuova=args.nuova, annulla=args.annulla, risposta=args.risposta,
+                     data=args.data, importo=args.importo, categoria=args.categoria,
+                     sottocategoria=args.sottocategoria, descrizione=args.descrizione,
+                     note=args.note)
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    sys.exit(EXIT.get(payload["stato"], 3))
 
 
 if __name__ == "__main__":

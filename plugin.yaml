@@ -1,0 +1,24 @@
+name: budget-familiare
+version: 1.0.0
+manifest_version: 2
+api_version: "1.0"
+description: Registra spese ed entrate della famiglia sul foglio Budget di Google Sheets
+author: Andrea Loprieno
+license: MIT
+homepage: https://github.com/l33tleandrew/budget-familiare-workflow
+tags: [budget, google-sheets, finanza]
+
+provides_tools:
+  - registra_transazione
+
+provides_hooks:
+  - pre_llm_call
+  - pre_tool_call
+  - transform_llm_output
+  - on_session_end
+
+# Niente `capabilities`: non si fa override di tool ne' del modello, quindi
+# all'installazione non c'e' nessun consenso da chiedere.
+#
+# Niente `requires_env`: credenziali Google e id del foglio stanno nel profilo
+# (PROFILE_DIR in budget_sheets.py), non nell'ambiente.
