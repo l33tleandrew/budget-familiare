@@ -5,7 +5,7 @@ api_version: "1.0"
 description: Registra spese ed entrate della famiglia sul foglio Budget di Google Sheets
 author: Andrea Loprieno
 license: MIT
-homepage: https://github.com/l33tleandrew/budget-familiare-workflow
+homepage: https://github.com/l33tleandrew/budget-familiare
 tags: [budget, google-sheets, finanza]
 
 provides_tools:

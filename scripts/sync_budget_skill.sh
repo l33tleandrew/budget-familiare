@@ -3,7 +3,7 @@
 # Gira ogni 30 minuti via cron.
 #
 # NOTA: e' una soluzione di passaggio. La strada giusta col plugin e'
-#   hermes plugins install l33tleandrew/budget-familiare-workflow --ref <sha-40>
+#   hermes plugins install l33tleandrew/budget-familiare --ref <sha-40>
 # che porta con se' scan di sicurezza, provenienza registrata e pin a un commit
 # esatto (i ref devono essere SHA di 40 caratteri: tag e branch vengono rifiutati).
 #

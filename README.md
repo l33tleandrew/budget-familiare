@@ -17,7 +17,7 @@ agente  │ Quale sottocategoria di «Auto / Moto»? …
 ## Installazione
 
 ```bash
-hermes plugins install l33tleandrew/budget-familiare-workflow --ref <sha-40>
+hermes plugins install l33tleandrew/budget-familiare --ref <sha-40>
 hermes plugins enable budget-familiare
 hermes plugins list        # ✓ budget-familiare v1.0.0 (1 tools, 4 hooks)
 ```
@@ -30,7 +30,7 @@ direttamente al posto giusto — la directory va chiamata come il plugin, non co
 il repo:
 
 ```bash
-git clone https://github.com/l33tleandrew/budget-familiare-workflow.git \
+git clone https://github.com/l33tleandrew/budget-familiare.git \
     <HERMES_HOME>/plugins/budget-familiare
 hermes plugins doctor <HERMES_HOME>/plugins/budget-familiare --ci
 hermes plugins enable budget-familiare
