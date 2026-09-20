@@ -4,7 +4,7 @@
 > fatto così, e dove mettere le mani per cambiarlo. Descrive il codice com'è oggi, non
 > come dovrebbe essere. Quando il codice cambia, cambia anche questo file.
 
-**Versione plugin:** 1.0.0 · **Ultimo allineamento:** 2026-09-20 · **Commit:** `3309266`
+**Versione plugin:** 1.0.0 · **Ultimo allineamento:** 2026-09-20 · **Commit:** `ce951a1`
 
 ---
 
@@ -90,7 +90,7 @@ e per questo esiste un test che verifica che **nessun nome di categoria compaia 
 
 **b. I messaggi sono battute complete, non frammenti.** «Confermi?» da solo non è una frase
 che si possa ripetere, e chi la riceve fa la cosa ragionevole: la riscrive. Ogni messaggio
-composto da [`componi_messaggio()`](budget_sheets.py#L668) è autosufficiente — elenco
+composto da [`componi_messaggio()`](budget_sheets.py#L687) è autosufficiente — elenco
 numerato e riepilogo già dentro — così chi lo riceve ha **esattamente una cosa da stampare**,
 e stamparla è la strada facile.
 
@@ -295,16 +295,16 @@ Circa 1000 righe, organizzate in strati. Dal basso verso l'alto:
 
 | Righe | Strato | Responsabilità |
 |---|---|---|
-| 36-69 | **Costanti** | percorsi, id del foglio, posizione e TTL della bozza |
+| 36-69 | **Costanti** | percorsi, id del foglio, anno del budget, posizione e TTL della bozza |
 | 71-139 | **Auth** | OAuth: refresh del token, cache su file con margine di 60 s |
 | 141-168 | **HTTP** | `_api_request` con auto-retry una volta sola sul 401 |
 | 170-334 | **Tassonomia** | parsing di `tassonomia.yaml`, lookup per id/nome, derivazione del tipo |
-| 336-443 | **Validazione** | data (assoluta e relativa), importo (formati IT/EN), conferma |
-| 445-527 | **Bozza** | lock, load, save atomico, TTL |
-| 529-637 | **Logica del dialogo** | `unisci`, `normalizza`, `risolvi_risposta` |
-| 639-732 | **Messaggi** | `componi_messaggio` — il testo intero da mostrare |
-| 734-746 | **Sheets** | `append_row` |
-| 748-986 | **Orchestrazione + CLI** | `esegui`, `_turno`, `main` |
+| 336-462 | **Validazione** | data (assoluta e relativa), anno del budget, importo (formati IT/EN), conferma |
+| 464-546 | **Bozza** | lock, load, save atomico, TTL |
+| 548-656 | **Logica del dialogo** | `unisci`, `normalizza`, `risolvi_risposta` |
+| 658-761 | **Messaggi** | `componi_messaggio` — il testo intero da mostrare |
+| 763-775 | **Sheets** | `append_row` |
+| 777-1024 | **Orchestrazione + CLI** | `esegui`, `_turno`, `main` |
 
 Le funzioni che contano davvero sono quattro, e sono in §6.
 
@@ -331,6 +331,14 @@ modello applicava a memoria.
 scorso». Due scelte deliberate: `oggi` è iniettabile (un test che dipende dall'orologio
 fallisce a mezzanotte e nessuno capisce perché) e **non si guarda mai avanti** (una spesa la
 si registra dopo averla fatta; «domani» è quasi sempre un errore di battitura).
+
+**Anno del budget.** `anno_disallineato()` è la sola guardia che sta *fuori* dal flusso di
+`normalizza()`: non riguarda un campo ma la configurazione, quindi il suo posto è all'inizio
+del turno e non in coda alla validazione. A differenza delle date relative **non** ha un
+`oggi` iniettabile: lì l'orologio è l'unico ingresso, qui i lati del confronto sono due e la
+costante si patcha. Un parametro che la produzione non passa mai servirebbe solo a far dire
+due anni diversi alla guardia e al messaggio, che legge `now()` per conto suo; i test che
+provano il confine di mezzanotte spostano l'orologio. Il come e il perché stanno in §13.4.
 
 **Conferma.** `interpreta_conferma()` riconosce ~15 forme di sì e ~7 di no. `"1"` e `"2"`
 sono deliberatamente fuori da entrambi gli insiemi: sarebbero ambigui contro un numero di
@@ -418,7 +426,7 @@ testo mostrato all'utente perché non è lui a scriverlo.
 
 ### Le quattro funzioni che contano
 
-#### `risolvi_risposta(stato, testo)` — [`:620`](budget_sheets.py#L620)
+#### `risolvi_risposta(stato, testo)` — [`:639`](budget_sheets.py#L639)
 
 **Il cuore del sistema.** Lo script sa che domanda ha fatto, quindi sa a quale campo
 appartiene la risposta:
@@ -434,7 +442,7 @@ ritorna `{}`.
 
 Questo è l'instradamento che prima toccava al modello, ed è dove sbagliava.
 
-#### `unisci(campi, nuovi)` — [`:545`](budget_sheets.py#L545)
+#### `unisci(campi, nuovi)` — [`:564`](budget_sheets.py#L564)
 
 Fonde i campi nuovi nella bozza, ignorando i `None`. Tre regole:
 
@@ -448,7 +456,7 @@ Fonde i campi nuovi nella bozza, ignorando i `None`. Tre regole:
    decadere una sottocategoria già scelta.
 3. **Qualsiasi modifica invalida una conferma già data.**
 
-#### `normalizza(campi)` — [`:569`](budget_sheets.py#L569)
+#### `normalizza(campi)` — [`:588`](budget_sheets.py#L588)
 
 Valida in **ordine fisso** e ritorna il **primo** problema trovato:
 
@@ -471,7 +479,7 @@ Due comportamenti derivati dalla tassonomia, non dal chiamante:
 - se il tipo non è ricavabile (`entrambi` senza tipo sulla sottocategoria), lo stato è
   `errore_tassonomia`: è un errore di configurazione, non una domanda.
 
-#### `componi_messaggio(stato, campi, ...)` — [`:668`](budget_sheets.py#L668)
+#### `componi_messaggio(stato, campi, ...)` — [`:687`](budget_sheets.py#L687)
 
 Un ramo per stato, e ogni ramo ritorna il **testo intero** da mostrare, con elenco numerato
 o riepilogo già dentro. `_elenco()` numera con **l'id della tassonomia, non con la
@@ -495,10 +503,12 @@ posizione**, così il contratto regge anche se un giorno gli id avranno dei buch
 | `errore_scrittura` | Google ha rifiutato la scrittura | → `chiedi_conferma` senza «Si» | 2 |
 | `errore_tassonomia` | tipo non ricavabile | **non toccata** | 5 |
 | `errore_bozza` | non si riesce a salvare lo stato | non salvabile | 6 |
+| `errore_anno` | anno civile ≠ `ANNO_BUDGET` | **non toccata** | 7 |
 
 Gli exit code valgono per l'uso da CLI; passando dal plugin conta solo `stato`. Il default è
 3 (`EXIT.get(payload["stato"], 3)`), che copre tutti gli stati di dialogo e quelli terminali
-benigni.
+benigni. `1, 2, 5, 6, 7` sono la sequenza degli errori: il 7 la continua invece di infilarsi
+in mezzo agli stati benigni.
 
 **Due scelte di recupero che vale la pena conoscere:**
 
@@ -541,6 +551,9 @@ MESSAGGIO UTENTE
 │            └─ _turno()  ── dentro flock ──
 │               │
 │               ├─ annulla=True ──────────────────────► «annullata»            ✓ cancellata
+│               ├─ anno_disallineato() ───────────────► «errore_anno»          ✗ bozza intatta
+│               │     └─ dopo `annulla` di proposito: chiudere una bozza aperta
+│               │        non scrive niente e non deve restare impossibile
 │               ├─ nuova=True → cancella_bozza()
 │               ├─ stato == "scrittura_in_corso" ─────► «scrittura_in_corso»   (vedi §14.1)
 │               ├─ risposta≠None ma nessuna bozza ────► «bozza_assente/scaduta»
@@ -688,6 +701,7 @@ fallisce — ed è voluto.
 | I9 | Non si chiede mai una sottocategoria a una categoria che non ne ha | `tests/test_budget_sheets.py:936` |
 | I10 | Niente arriva sul foglio senza una conferma esplicita | `tests/eval_protocollo.py` |
 | I11 | La suite non tocca mai la rete né il foglio vero | mock con `side_effect` che solleva |
+| I12 | Con l'anno disallineato non arriva niente sul foglio | `tests/test_budget_sheets.py` (`TestGuardiaAnno`) |
 
 ---
 
@@ -703,7 +717,7 @@ Tutte in cima a [`budget_sheets.py:36-42`](budget_sheets.py#L36-L42):
 | `TOKEN_FILE` | `<PROFILE_DIR>/google_token.json` | token con refresh |
 | `CRED_FILE` | `<PROFILE_DIR>/google_client_secret.json` | credenziali OAuth |
 | `SPREADSHEET_ID` | `1iDYzjzy…M6JB0` | il foglio di destinazione |
-| `ANNO_BUDGET` | `2026` | l'anno delle transazioni; si aggiorna a mano una volta l'anno |
+| `ANNO_BUDGET` | `2026` | l'anno delle transazioni; si aggiorna a mano una volta l'anno, e una guardia presidia lo scarto (vedi §13.4) |
 | `GOOGLE_SHEET_NAME` | `Transazioni 2026` | per default `Transazioni {ANNO_BUDGET}`, sovrascrivibile |
 | `TASSONOMIA_FILE` | accanto allo script | risolto da `__file__` |
 
@@ -718,7 +732,7 @@ solo `Transazioni` — e `ANNO_BUDGET` continuerebbe a valere lo stesso.
 |---|---|---|
 | `BUDGET_BOZZA_FILE` | (vedi sotto) | override del percorso della bozza — **usato dai test** |
 | `BUDGET_BOZZA_TTL_MIN` | `15` | TTL della bozza in minuti; un valore storto non fa esplodere l'import |
-| `ANNO_BUDGET` | `2026` | override dell'anno del budget; un valore non numerico **fa fallire l'import**, deliberatamente |
+| `ANNO_BUDGET` | `2026` | override dell'anno del budget; un valore non numerico **fa fallire l'import**, deliberatamente — **usato anche dalla suite** (vedi sotto) |
 | `GOOGLE_SHEET_NAME` | `Transazioni {ANNO_BUDGET}` | override del nome della scheda, per svincolarlo dall'anno |
 
 **Le due variabili nuove si chiamano come la costante che sovrascrivono.** Non c'è una
@@ -730,6 +744,15 @@ l'anno del budget.
 `ANNO_BUDGET` degrada diversamente da `BUDGET_BOZZA_TTL_MIN`: un TTL storto non compromette
 i dati e ripiega sul default, un anno storto sceglierebbe il **foglio sbagliato**. Meglio non
 partire. La stringa vuota vale in entrambi i casi come «non impostato».
+
+**La suite imposta `ANNO_BUDGET` all'anno civile**, in [`tests/percorsi.py`](tests/percorsi.py)
+— l'unico modulo che ogni file di test importa *prima* di `budget_sheets`, che lo legge
+all'import. Senza, la guardia sul cambio d'anno renderebbe rossa in blocco ogni prova che
+esegue un turno il 1° gennaio: un centinaio di fallimenti muti per una costante da aggiornare
+(misurato: `ANNO_BUDGET=2025 make test` ne produce 106). Lo scarto lo sorveglia **un** test
+apposta, `TestAnnoBudget.test_la_costante_e_allineata_all_anno_civile`, che rilegge il
+default dal sorgente in un subprocess e fallisce da solo dicendo cosa fare. È un
+`setdefault`, quindi `ANNO_BUDGET=2025 make test` resta una prova possibile.
 
 ### Dove vive la bozza
 
@@ -775,7 +798,7 @@ e, se il worktree è sporco, fa `git add -A` + commit `auto-sync: <ts>` + `git p
 
 ## 12. Test ed eval
 
-267 test, tutti con la sola stdlib, in meno di mezzo secondo. `make test` li esegue tutti.
+277 test, tutti con la sola stdlib, in meno di mezzo secondo. `make test` li esegue tutti.
 
 | Comando | Cosa gira |
 |---|---|
@@ -858,7 +881,7 @@ dire come si comporta *quel* modello.
 
 ### 13.2 Cambiare un messaggio mostrato all'utente
 
-Unico posto: [`componi_messaggio()`](budget_sheets.py#L668). Non esistono copie altrove — è
+Unico posto: [`componi_messaggio()`](budget_sheets.py#L687). Non esistono copie altrove — è
 l'invariante I2. Controlla però le asserzioni letterali in `test_budget_sheets.py` e in
 [`eval_smemorato.py:196-204`](tests/eval_smemorato.py#L196-L204), che legge il testo mostrato
 per trovarci dentro il numero da digitare. `casi_eval.json` invece non contiene testo di
@@ -879,10 +902,23 @@ fallback ritorna `dettaglio`, cioè stringa vuota, e l'utente vedrebbe un messag
 
 ### 13.4 Cambiare il foglio a inizio anno
 
-Si cambia la costante `ANNO_BUDGET` a [`:40`](budget_sheets.py#L40), **un punto solo**: il
-nome della scheda ne discende. Serve una modifica al codice e un redeploy — l'esercizio non
-va configurato da ambiente, anche se la variabile omonima esiste: quella è per i test e per
-le prove.
+**L'ordine conta: prima la scheda sul foglio, poi la costante.** Finché l'anno civile e
+`ANNO_BUDGET` non combaciano, `anno_disallineato()`
+([`:352`](budget_sheets.py#L352)) blocca ogni turno con lo stato `errore_anno` e il plugin
+non registra niente — lo dice nominando entrambi gli anni. È deliberato: la scheda del nuovo
+anno potrebbe non esistere ancora, e scrivere comunque su quella vecchia è peggio di un
+errore. L'unica cosa che resta possibile è `annulla`, perché chi ha un dialogo a metà deve
+poterlo chiudere anche a configurazione rotta.
+
+Il confronto è `!=` e non `>`: portare avanti `ANNO_BUDGET` in anticipo blocca invece di far
+finire le spese di dicembre in silenzio sulla scheda dell'anno dopo. Bloccarsi è rumoroso e
+si annulla riportando indietro la costante; una riga sul foglio sbagliato no.
+
+Poi si cambia la costante a [`:40`](budget_sheets.py#L40), **un punto solo**: il nome della
+scheda ne discende. Serve una modifica al codice e un redeploy — l'esercizio non va
+configurato da ambiente, anche se la variabile omonima esiste: quella è per i test e per le
+prove. Se ci si dimentica, se ne accorge `TestAnnoBudget.test_la_costante_e_allineata_all_anno_civile`,
+che diventa rosso da solo il 1° gennaio (vedi §11).
 
 Se un giorno il foglio smettesse di parlare dell'anno — una scheda `Transazioni` che li
 tiene tutti — il nome si sgancia esportando `GOOGLE_SHEET_NAME`, o cambiando il default a

@@ -349,6 +349,29 @@ def validate_data(data):
         return False
 
 
+def anno_disallineato():
+    """True se l'anno civile e quello configurato non combaciano.
+
+    L'orologio si accorge del cambio d'anno, la costante e' la presa d'atto:
+    finche' le due non combaciano non si scrive niente, perche' la scheda
+    dell'anno nuovo potrebbe non esistere e le date senza anno finirebbero
+    tutte in quello vecchio.
+
+    E' `!=` e non `>` di proposito: chi porta avanti ANNO_BUDGET in anticipo —
+    scheda del 2027 creata a dicembre — con `>` vedrebbe le spese di dicembre
+    finire in silenzio sulla scheda dell'anno dopo. Bloccarsi e' rumoroso e si
+    annulla riportando indietro la costante; una riga sul foglio sbagliato no.
+
+    Niente `oggi` iniettabile, al contrario di normalizza_data_relativa(): li'
+    l'orologio e' l'unico ingresso, qui i lati del confronto sono due e la
+    costante si patcha. Un parametro che la produzione non passa mai sarebbe solo
+    un modo per far dire due anni diversi a questa funzione e al messaggio, che
+    legge now() per conto suo. I test che provano il confine di mezzanotte
+    spostano l'orologio.
+    """
+    return datetime.now().year != ANNO_BUDGET
+
+
 _GIORNI = ("lunedi", "martedi", "mercoledi", "giovedi", "venerdi", "sabato", "domenica")
 
 _GIORNI_FA = {"oggi": 0, "ieri": 1, "altro ieri": 2, "avantieri": 2, "avant ieri": 2}
@@ -725,6 +748,12 @@ def componi_messaggio(stato, campi, rifiutato="", tipo="", dettaglio=""):
         return ("Non riesco a tenere nota di questa transazione: c'è un problema sul "
                 "server. Non ho registrato niente.")
 
+    if stato == "errore_anno":
+        return (f"Il budget è impostato sul {ANNO_BUDGET}, ma siamo nel "
+                f"{datetime.now().year}. Non registro niente finché non viene "
+                "aggiornato: serve la scheda del nuovo anno sul foglio e l'anno "
+                "nuovo nella configurazione.")
+
     if stato == "errore_tassonomia":
         dove = f"{campi.get('categoria')} / {campi.get('sottocategoria')}".strip(" /")
         return (f"Non riesco a capire se «{dove}» è un'entrata o un'uscita: la "
@@ -756,6 +785,7 @@ EXIT = {
     "errore_scrittura": 2,
     "errore_tassonomia": 5,
     "errore_bozza": 6,
+    "errore_anno": 7,
 }
 
 
@@ -861,6 +891,9 @@ def _turno(*, nuova, annulla, risposta, data, importo, categoria,
         if annulla:
             cancella_bozza()
             _emetti("annullata", campi_vuoti())
+
+        if anno_disallineato():
+            _emetti("errore_anno", campi_vuoti())
 
         if nuova:
             cancella_bozza()

@@ -47,6 +47,26 @@ class TestAnnoBudget(unittest.TestCase):
         cambiare anno ridiventerebbe una modifica in due punti."""
         self.assertEqual(bs.GOOGLE_SHEET_NAME, f"Transazioni {bs.ANNO_BUDGET}")
 
+    def test_la_costante_e_allineata_all_anno_civile(self):
+        """Un rosso solo, che dice perche', invece di cinquanta muti.
+
+        La suite gira con ANNO_BUDGET forzato all'anno civile (vedi percorsi.py),
+        altrimenti la guardia sul cambio d'anno farebbe fallire in blocco ogni
+        prova che esegue un turno. Senza questo test resterebbe tutto verde
+        mentre in produzione il plugin non registra piu' niente.
+
+        Si rilegge il default dal sorgente, non da bs.ANNO_BUDGET: quello ormai
+        e' il valore iniettato, e confrontarlo con l'orologio non direbbe nulla.
+        """
+        env = {k: v for k, v in os.environ.items() if k != "ANNO_BUDGET"}
+        r = subprocess.run(
+            [sys.executable, "-c", "import budget_sheets; print(budget_sheets.ANNO_BUDGET)"],
+            capture_output=True, text=True, cwd=SCRIPTS, env=env)
+        self.assertEqual(
+            int(r.stdout.strip()), datetime.now().year,
+            "crea la scheda del nuovo anno sul foglio, poi aggiorna ANNO_BUDGET in "
+            "budget_sheets.py: finché non combaciano il plugin non registra niente")
+
 
 # ─────────────────────────────────────────────
 # Validazione: data
@@ -984,6 +1004,110 @@ class TestCli(ConBozza):
             env={**os.environ, "BUDGET_BOZZA_FILE": self.bozza})
         self.assertEqual(r.returncode, 3)
         self.assertEqual(json.loads(r.stdout)["stato"], "chiedi_conferma")
+
+
+# ─────────────────────────────────────────────
+# La guardia sul cambio d'anno
+# ─────────────────────────────────────────────
+
+class TestGuardiaAnno(ConBozza):
+    """Finche' la costante e l'orologio non combaciano non si registra niente,
+    ma una bozza gia' aperta si deve poter chiudere lo stesso.
+
+    L'anno si rompe patchando la costante invece di spostare l'orologio: la
+    sentinella e il messaggio leggono la globale a ogni chiamata, quindi basta, e
+    un test che finge una data di sistema e' un test che prima o poi sorprende
+    qualcun altro.
+    """
+
+    ANNO_ROTTO = datetime.now().year + 1
+
+    @staticmethod
+    def orologio(momento):
+        """Sposta l'orologio che legge `anno_disallineato()`, per una chiamata.
+
+        La funzione non prende un `oggi` iniettabile: sarebbe un parametro che la
+        produzione non passa mai, e l'unico effetto possibile sarebbe far dire due
+        anni diversi alla guardia e al messaggio, che legge now() per conto suo.
+        Il confine di mezzanotte resta provabile lo stesso, da qui.
+        """
+        return mock.patch.object(bs, "datetime", **{"now.return_value": momento})
+
+    def turno(self, **kwargs):
+        """Un turno con l'anno disallineato e senza rete. Ritorna (payload, scritte)."""
+        scritte = []
+
+        def finto_append_row(*args, **kw):
+            scritte.append(args)
+            return "X!A1:G1"
+
+        with mock.patch.object(bs, "ANNO_BUDGET", self.ANNO_ROTTO), \
+             mock.patch.object(bs, "get_access_token", return_value="token-finto"), \
+             mock.patch.object(bs, "append_row", side_effect=finto_append_row):
+            return bs.esegui(**kwargs), scritte
+
+    def test_un_minuto_prima_di_mezzanotte_non_scatta(self):
+        with self.orologio(datetime(bs.ANNO_BUDGET, 12, 31, 23, 59)):
+            self.assertFalse(bs.anno_disallineato())
+
+    def test_il_primo_gennaio_scatta(self):
+        with self.orologio(datetime(bs.ANNO_BUDGET + 1, 1, 1)):
+            self.assertTrue(bs.anno_disallineato())
+
+    def test_il_31_dicembre_dell_anno_prima_scatta(self):
+        """E' `!=`, non `>`: chi porta avanti la costante in anticipo si blocca,
+        invece di scrivere in silenzio sulla scheda dell'anno dopo."""
+        with self.orologio(datetime(bs.ANNO_BUDGET - 1, 12, 31)):
+            self.assertTrue(bs.anno_disallineato())
+
+    def test_non_si_registra_niente(self):
+        """Il criterio vero: non che risponda male, ma che non scriva."""
+        self.scrivi_bozza("chiedi_conferma", {"data": "01/09/2026", "importo": 30.0,
+                                              "categoria": "Supermercato"})
+        with open(self.bozza, "rb") as f:
+            prima = f.read()
+
+        payload, scritte = self.turno(risposta="sì")
+
+        self.assertEqual(payload["stato"], "errore_anno")
+        self.assertEqual(scritte, [], "con l'anno disallineato non si tocca il foglio")
+        with open(self.bozza, "rb") as f:
+            self.assertEqual(f.read(), prima, "la bozza resta dov'era, intatta")
+
+    def test_nemmeno_una_transazione_nuova_passa(self):
+        payload, scritte = self.turno(nuova=True, importo="30", categoria="Supermercato")
+        self.assertEqual(payload["stato"], "errore_anno")
+        self.assertEqual(scritte, [])
+
+    def test_annulla_resta_possibile(self):
+        """Chi ha una bozza aperta deve poterla chiudere anche a configurazione
+        rotta, altrimenti resta incastrato in un dialogo a meta'."""
+        self.scrivi_bozza("chiedi_categoria", {"importo": 30.0})
+
+        payload, scritte = self.turno(annulla=True)
+
+        self.assertEqual(payload["stato"], "annullata")
+        self.assertEqual(scritte, [])
+        self.assertFalse(os.path.exists(self.bozza), "annulla deve cancellare la bozza")
+
+    def test_il_messaggio_cita_entrambi_gli_anni(self):
+        payload, _ = self.turno(nuova=True, importo="30")
+        messaggio = payload["messaggio"]
+        self.assertIn(str(self.ANNO_ROTTO), messaggio, "manca l'anno configurato")
+        self.assertIn(str(datetime.now().year), messaggio, "manca l'anno civile")
+        self.assertIn("scheda", messaggio, "il messaggio deve dire cosa fare")
+
+    def test_exit_7_end_to_end(self):
+        """Lo script davvero, con l'anno rotto da ambiente: non arriva mai a
+        chiedere un token, quindi non puo' toccare Google."""
+        r = subprocess.run(
+            [sys.executable, SCRIPT,
+             "append", "--nuova", "--importo", "30", "--categoria", "Supermercato"],
+            capture_output=True, text=True,
+            env={**os.environ, "BUDGET_BOZZA_FILE": self.bozza,
+                 "ANNO_BUDGET": str(self.ANNO_ROTTO)})
+        self.assertEqual(r.returncode, 7)
+        self.assertEqual(json.loads(r.stdout)["stato"], "errore_anno")
 
 
 # ─────────────────────────────────────────────
