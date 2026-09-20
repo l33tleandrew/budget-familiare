@@ -3,7 +3,7 @@
     "Un solo dataset per due livelli di eval.",
     "eval_protocollo.py parte da 'interpretazione' come se la skill avesse gia' letto il",
     "messaggio, rigioca la conversazione contro il vero gateway di validazione con la",
-    "scrittura su Sheets sostituita da uno stub, e verifica 'messaggi_attesi', 'esito' e",
+    "scrittura su Sheets sostituita da uno stub, e verifica 'stati_attesi', 'esito' e",
     "'riga_attesa'.",
     "eval_modello.py da' 'messaggio' a un modello insieme a SKILL.md e alla tassonomia e",
     "verifica che ne ricavi 'interpretazione'; salta i casi con valuta_interpretazione=false,",

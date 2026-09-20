@@ -126,7 +126,7 @@ budget-familiare/                 ← la radice del repo È la radice del plugin
     ├── test_budget_sheets.py  il motore (il file più grande: 56 KB)
     ├── test_plugin.py         le cinque superfici
     ├── test_schemas.py        cosa il modello NON deve sapere
-    ├── casi_eval.json         ~14 conversazioni complete, condivise dalle due eval
+    ├── casi_eval.json         19 conversazioni complete, condivise dalle tre eval
     ├── eval_protocollo.py     rigioca le conversazioni, deterministica
     ├── eval_smemorato.py      eval avversariale: modelli che non ricordano niente
     └── eval_modello.py        opt-in, a pagamento: misura l'interpretazione reale
@@ -820,7 +820,7 @@ dire come si comporta *quel* modello.
      `"\n2. Supermercato"`, `"\n17. Beneficienza"`
    - [`tests/eval_smemorato.py:203-204`](tests/eval_smemorato.py#L203-L204) —
      `"\n3. Cibo fuori / bevute"`, `"\n5. Ristorante"`
-   - `tests/casi_eval.json` — solo se tocchi una delle voci usate nei ~14 casi
+   - `tests/casi_eval.json` — solo se tocchi una delle voci usate nei 19 casi
    - [`README.md:9-15`](README.md#L9-L15) — il dialogo d'esempio
 5. `make test`
 
@@ -840,8 +840,10 @@ dire come si comporta *quel* modello.
 ### 13.2 Cambiare un messaggio mostrato all'utente
 
 Unico posto: [`componi_messaggio()`](budget_sheets.py#L667). Non esistono copie altrove — è
-l'invariante I2. Controlla però le asserzioni letterali in `test_budget_sheets.py`,
-`eval_protocollo.py` e nei `messaggi_attesi` di `casi_eval.json`.
+l'invariante I2. Controlla però le asserzioni letterali in `test_budget_sheets.py` e in
+[`eval_smemorato.py:196-204`](tests/eval_smemorato.py#L196-L204), che legge il testo mostrato
+per trovarci dentro il numero da digitare. `casi_eval.json` invece non contiene testo di
+messaggi: i suoi `stati_attesi` sono nomi di stato.
 
 ### 13.3 Aggiungere un campo alla transazione
 
@@ -940,7 +942,6 @@ potrebbero scambiarsi il messaggio.
 | [`tests/eval_modello.py:78`](tests/eval_modello.py#L78) | stessa etichetta stantia nel prompt dell'eval |
 | [`tests/eval_protocollo.py:29`](tests/eval_protocollo.py#L29) | importa `TASSONOMIA` e non lo usa |
 | [`tests/casi_eval.json:8`](tests/casi_eval.json#L8) | un commento cita ancora `SKILL.md`, rimossa in `5eb3258` |
-| [`README.md:95`](README.md#L95) | dichiara «263 test»; oggi sono 267 |
 | [`tassonomia.yaml:224`](tassonomia.yaml#L224) | la voce `"Altro"` di *Salute* ha due spazi in coda — l'unica riga del file in queste condizioni (c'è un test che ne verifica il trim) |
 
 ### 14.6 Interfaccia legacy a tipi misti

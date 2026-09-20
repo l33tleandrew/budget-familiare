@@ -5,10 +5,11 @@ l'interprete di Hermes e non c'e' modo di installare pacchetti. L'unica eccezion
 `eval_modello.py`, che e' opt-in e chiede l'SDK ufficiale.
 
 ```bash
-make test           # tutto quello che gira offline
-make plugin         # solo il plugin: manifest, registrazioni, middleware, hook
-make eval           # la sola eval deterministica, con le trascrizioni
-make eval-modello   # l'eval col modello: chiamate a pagamento
+make test             # tutto quello che gira offline
+make plugin           # solo il plugin: manifest, registrazioni, middleware, hook
+make eval             # la sola eval deterministica, con le trascrizioni
+make eval-smemorato   # l'eval avversariale: un modello che non ricorda niente
+make eval-modello     # l'eval col modello: chiamate a pagamento
 ```
 
 ## Cosa c'e' dentro
@@ -20,8 +21,9 @@ make eval-modello   # l'eval col modello: chiamate a pagamento
 | `test_schemas.py` | Che lo schema del tool — l'unico testo che il modello legge a ogni turno — non sappia cose che non sono affar suo: percorsi, interprete, flag da riga di comando, i messaggi dello script, l'elenco delle categorie, il foglio di destinazione. E che resti corto. |
 | `percorsi.py` | Dove stanno le cose, in un posto solo. |
 | `eval_protocollo.py` | La skill a livello di protocollo: rigioca le conversazioni di `casi_eval.json` e verifica messaggi mostrati, gating della conferma, trappole e riga finale. |
+| `eval_smemorato.py` | La resistenza: modelli che dimenticano tutto fra un turno e l'altro devono arrivare lo stesso alla stessa riga. |
 | `eval_modello.py` | L'interpretazione: un modello legge lo schema del tool insieme al messaggio informale, e si verifica che ne ricavi i campi giusti. |
-| `casi_eval.json` | I casi, condivisi dalle due eval. |
+| `casi_eval.json` | I casi, condivisi dalle tre eval. |
 
 ## Perche' non si tocca mai Google Sheets
 
@@ -46,20 +48,23 @@ Una voce in `casi_eval.json`:
   "id": "identificativo-in-kebab-case",
   "descrizione": "cosa dimostra questo caso",
   "messaggio": "il messaggio informale dell'utente",
-  "interpretazione": {              // i campi della PRIMA chiamata; "" = non deducibile
+  "interpretazione": {                  // i campi della PRIMA chiamata; "" = non deducibile
     "data": "", "categoria": "Supermercato", "sottocategoria": "",
     "importo": "40.00", "descrizione": "Spesa"
   },
-  "valuta_interpretazione": true,   // false se l'interpretazione e' sbagliata apposta
-  "risposte": ["sì"],               // cosa risponde l'utente, in ordine
-  "messaggi_attesi": ["Confermi?"], // i messaggi dello script, alla lettera
-  "esito": "scritta",               // scritta | non_scritta | loop
-  "riga_attesa": {                  // null se non si deve scrivere niente
+  "valuta_interpretazione": true,       // false se l'interpretazione e' sbagliata apposta
+  "risposte": ["sì"],                   // cosa risponde l'utente, in ordine
+  "stati_attesi": ["chiedi_conferma"],  // gli stati attraversati, in ordine
+  "esito": "scritta",                   // scritta | non_scritta | loop | errore
+  "riga_attesa": {                      // null se non si deve scrivere niente
     "data": "OGGI", "tipo": "Uscita", "categoria": "Supermercato",
     "sottocategoria": "", "importo": 40.0
   }
 }
 ```
+
+In `stati_attesi` vanno i nomi degli stati `chiedi_*` che lo script attraversa, uno per
+domanda posta, nell'ordine in cui le pone — non i messaggi mostrati all'utente.
 
 `OGGI` nei valori attesi vale la data odierna del sistema. I casi con
 `valuta_interpretazione: false` partono da un'interpretazione sbagliata di proposito,

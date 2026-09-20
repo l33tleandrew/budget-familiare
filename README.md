@@ -92,7 +92,7 @@ python3 budget_sheets.py append --importo 30 --categoria Sport
 ## Test
 
 ```bash
-make test             # 263 test, nessuna rete, nessuna riga sul foglio
+make test             # 267 test, nessuna rete, nessuna riga sul foglio
 make plugin           # solo il plugin
 make eval             # rigioca le conversazioni di tests/casi_eval.json
 make eval-smemorato   # un modello che non ricorda niente deve arrivare in fondo
