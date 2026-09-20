@@ -33,12 +33,13 @@ import json, os, re, sys, argparse, urllib.request, urllib.parse, time
 import contextlib, fcntl, tempfile, unicodedata
 from datetime import datetime, timedelta
 
-PROFILE_DIR      = "/opt/data/profiles/budgetingagent"
-TOKEN_FILE       = f"{PROFILE_DIR}/google_token.json"
-CRED_FILE        = f"{PROFILE_DIR}/google_client_secret.json"
-SPREADSHEET_ID   = "1iDYzjzyu_du_axBmzOzI6k4DrzV2Y52_UZTFMtM6JB0"
-SHEET_NAME       = "Transazioni 2026"
-TASSONOMIA_FILE  = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tassonomia.yaml")
+PROFILE_DIR       = "/opt/data/profiles/budgetingagent"
+TOKEN_FILE        = f"{PROFILE_DIR}/google_token.json"
+CRED_FILE         = f"{PROFILE_DIR}/google_client_secret.json"
+SPREADSHEET_ID    = "1iDYzjzyu_du_axBmzOzI6k4DrzV2Y52_UZTFMtM6JB0"
+ANNO_BUDGET       = int(os.environ.get("ANNO_BUDGET") or 2026)
+GOOGLE_SHEET_NAME = os.environ.get("GOOGLE_SHEET_NAME") or f"Transazioni {ANNO_BUDGET}"
+TASSONOMIA_FILE   = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tassonomia.yaml")
 
 
 def _bozza_predefinita():
@@ -739,7 +740,7 @@ def append_row(access_token, data, tipo, categoria, sottocategoria, importo, des
     row = [[data, tipo, categoria, sottocategoria, float(importo), descrizione, note]]
     url = (
         f"https://sheets.googleapis.com/v4/spreadsheets/{SPREADSHEET_ID}"
-        f"/values/{urllib.parse.quote(SHEET_NAME)}!A:G:append"
+        f"/values/{urllib.parse.quote(GOOGLE_SHEET_NAME)}!A:G:append"
         f"?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS"
     )
     result, _ = _api_request("POST", url, access_token, body={"values": row})

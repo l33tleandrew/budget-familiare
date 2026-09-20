@@ -35,6 +35,20 @@ CHIAVI = {"stato", "messaggio", "data", "importo", "categoria", "sottocategoria"
 
 
 # ─────────────────────────────────────────────
+# Configurazione
+# ─────────────────────────────────────────────
+
+class TestAnnoBudget(unittest.TestCase):
+
+    @unittest.skipIf(os.environ.get("GOOGLE_SHEET_NAME"),
+                     "il nome del foglio e' sovrascritto dall'ambiente")
+    def test_il_nome_predefinito_della_scheda_discende_dall_anno(self):
+        """Un posto solo: se il default tornasse a essere un letterale,
+        cambiare anno ridiventerebbe una modifica in due punti."""
+        self.assertEqual(bs.GOOGLE_SHEET_NAME, f"Transazioni {bs.ANNO_BUDGET}")
+
+
+# ─────────────────────────────────────────────
 # Validazione: data
 # ─────────────────────────────────────────────
 
@@ -1154,7 +1168,7 @@ class TestAppendRow(unittest.TestCase):
     def test_url_punta_al_foglio_configurato(self):
         _, richiesta = self.esegui({"updates": {"updatedRange": "X!A1:G1"}})
         url = richiesta.full_url
-        self.assertIn(urllib.parse.quote(bs.SHEET_NAME), url)
+        self.assertIn(urllib.parse.quote(bs.GOOGLE_SHEET_NAME), url)
         self.assertIn(bs.SPREADSHEET_ID, url)
         self.assertIn("!A:G:append", url)
         self.assertIn("valueInputOption=USER_ENTERED", url)

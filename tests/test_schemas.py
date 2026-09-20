@@ -158,7 +158,7 @@ class TestConoscenzeCheNonDeveAvere(unittest.TestCase):
     """
 
     def test_non_nomina_il_foglio_di_destinazione(self):
-        for dettaglio in (bs.SHEET_NAME, "SHEET_NAME", bs.SPREADSHEET_ID):
+        for dettaglio in (bs.GOOGLE_SHEET_NAME, "SHEET_NAME", bs.SPREADSHEET_ID):
             with self.subTest(dettaglio=dettaglio):
                 self.assertNotIn(dettaglio, PROMPT)
 

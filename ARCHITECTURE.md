@@ -4,7 +4,7 @@
 > fatto così, e dove mettere le mani per cambiarlo. Descrive il codice com'è oggi, non
 > come dovrebbe essere. Quando il codice cambia, cambia anche questo file.
 
-**Versione plugin:** 1.0.0 · **Ultimo allineamento:** 2026-09-19 · **Commit:** `8071fae`
+**Versione plugin:** 1.0.0 · **Ultimo allineamento:** 2026-09-20 · **Commit:** `3309266`
 
 ---
 
@@ -90,7 +90,7 @@ e per questo esiste un test che verifica che **nessun nome di categoria compaia 
 
 **b. I messaggi sono battute complete, non frammenti.** «Confermi?» da solo non è una frase
 che si possa ripetere, e chi la riceve fa la cosa ragionevole: la riscrive. Ogni messaggio
-composto da [`componi_messaggio()`](budget_sheets.py#L667) è autosufficiente — elenco
+composto da [`componi_messaggio()`](budget_sheets.py#L668) è autosufficiente — elenco
 numerato e riepilogo già dentro — così chi lo riceve ha **esattamente una cosa da stampare**,
 e stamparla è la strada facile.
 
@@ -348,7 +348,7 @@ che deve averne uno esplicito.
 
 #### ⚠️ Vincoli di formato
 
-`leggi_tassonomia()` ([`budget_sheets.py:177`](budget_sheets.py#L177)) è un **parser a
+`leggi_tassonomia()` ([`budget_sheets.py:178`](budget_sheets.py#L178)) è un **parser a
 espressioni regolari riga per riga, non PyYAML**, perché sul server non si possono
 installare pacchetti. Di conseguenza l'indentazione è semanticamente carica:
 
@@ -418,7 +418,7 @@ testo mostrato all'utente perché non è lui a scriverlo.
 
 ### Le quattro funzioni che contano
 
-#### `risolvi_risposta(stato, testo)` — [`:619`](budget_sheets.py#L619)
+#### `risolvi_risposta(stato, testo)` — [`:620`](budget_sheets.py#L620)
 
 **Il cuore del sistema.** Lo script sa che domanda ha fatto, quindi sa a quale campo
 appartiene la risposta:
@@ -434,7 +434,7 @@ ritorna `{}`.
 
 Questo è l'instradamento che prima toccava al modello, ed è dove sbagliava.
 
-#### `unisci(campi, nuovi)` — [`:544`](budget_sheets.py#L544)
+#### `unisci(campi, nuovi)` — [`:545`](budget_sheets.py#L545)
 
 Fonde i campi nuovi nella bozza, ignorando i `None`. Tre regole:
 
@@ -448,7 +448,7 @@ Fonde i campi nuovi nella bozza, ignorando i `None`. Tre regole:
    decadere una sottocategoria già scelta.
 3. **Qualsiasi modifica invalida una conferma già data.**
 
-#### `normalizza(campi)` — [`:568`](budget_sheets.py#L568)
+#### `normalizza(campi)` — [`:569`](budget_sheets.py#L569)
 
 Valida in **ordine fisso** e ritorna il **primo** problema trovato:
 
@@ -471,7 +471,7 @@ Due comportamenti derivati dalla tassonomia, non dal chiamante:
 - se il tipo non è ricavabile (`entrambi` senza tipo sulla sottocategoria), lo stato è
   `errore_tassonomia`: è un errore di configurazione, non una domanda.
 
-#### `componi_messaggio(stato, campi, ...)` — [`:667`](budget_sheets.py#L667)
+#### `componi_messaggio(stato, campi, ...)` — [`:668`](budget_sheets.py#L668)
 
 Un ramo per stato, e ogni ramo ritorna il **testo intero** da mostrare, con elenco numerato
 o riepilogo già dentro. `_elenco()` numera con **l'id della tassonomia, non con la
@@ -596,7 +596,7 @@ transform_llm_output → la risposta finale È il testo di componi_messaggio()
 }
 ```
 
-`CAMPI` (i sette campi persistiti) è definito a [`:69`](budget_sheets.py#L69). Nota che
+`CAMPI` (i sette campi persistiti) è definito a [`:70`](budget_sheets.py#L70). Nota che
 `tipo` **non** è un campo persistito: si ricava a ogni turno dalla tassonomia con
 `tipo_di()`. È l'unica scelta che garantisce che una correzione della tassonomia si applichi
 anche a una bozza aperta.
@@ -612,7 +612,8 @@ esistono per la CLI, i test e la diagnostica.
 
 ### La riga sul foglio
 
-`append_row()` scrive sette colonne in `A:G` del foglio `Transazioni 2026`:
+`append_row()` scrive sette colonne in `A:G` del foglio `GOOGLE_SHEET_NAME` (oggi
+`Transazioni 2026`):
 
 | A | B | C | D | E | F | G |
 |---|---|---|---|---|---|---|
@@ -627,7 +628,7 @@ esistono per la CLI, i test e la diagnostica.
 
 ### Il lock
 
-`_bozza_lock()` ([`:450`](budget_sheets.py#L450)) è un `flock` esclusivo su
+`_bozza_lock()` ([`:451`](budget_sheets.py#L451)) è un `flock` esclusivo su
 `<BOZZA_FILE>.lock`, esposto come context manager. Serializza il ciclo
 **leggi → fondi → scrivi**: senza, due invocazioni ravvicinate leggono la stessa bozza e la
 seconda scrittura perde il campo della prima.
@@ -694,7 +695,7 @@ fallisce — ed è voluto.
 
 ### Costanti
 
-Tutte in cima a [`budget_sheets.py:36-41`](budget_sheets.py#L36-L41):
+Tutte in cima a [`budget_sheets.py:36-42`](budget_sheets.py#L36-L42):
 
 | Costante | Valore | Note |
 |---|---|---|
@@ -702,8 +703,14 @@ Tutte in cima a [`budget_sheets.py:36-41`](budget_sheets.py#L36-L41):
 | `TOKEN_FILE` | `<PROFILE_DIR>/google_token.json` | token con refresh |
 | `CRED_FILE` | `<PROFILE_DIR>/google_client_secret.json` | credenziali OAuth |
 | `SPREADSHEET_ID` | `1iDYzjzy…M6JB0` | il foglio di destinazione |
-| `SHEET_NAME` | `Transazioni 2026` | ⚠️ cambia a ogni anno solare |
+| `ANNO_BUDGET` | `2026` | l'anno delle transazioni; si aggiorna a mano una volta l'anno |
+| `GOOGLE_SHEET_NAME` | `Transazioni 2026` | per default `Transazioni {ANNO_BUDGET}`, sovrascrivibile |
 | `TASSONOMIA_FILE` | accanto allo script | risolto da `__file__` |
+
+`ANNO_BUDGET` e `GOOGLE_SHEET_NAME` non sono la stessa cosa e non vanno confusi: il primo
+dice **quale anno il budget tiene**, il secondo **dove si scrive**. Oggi il nome del foglio
+parla dell'anno e per comodità lo eredita, ma un foglio che tenesse più anni si chiamerebbe
+solo `Transazioni` — e `ANNO_BUDGET` continuerebbe a valere lo stesso.
 
 ### Variabili d'ambiente
 
@@ -711,6 +718,18 @@ Tutte in cima a [`budget_sheets.py:36-41`](budget_sheets.py#L36-L41):
 |---|---|---|
 | `BUDGET_BOZZA_FILE` | (vedi sotto) | override del percorso della bozza — **usato dai test** |
 | `BUDGET_BOZZA_TTL_MIN` | `15` | TTL della bozza in minuti; un valore storto non fa esplodere l'import |
+| `ANNO_BUDGET` | `2026` | override dell'anno del budget; un valore non numerico **fa fallire l'import**, deliberatamente |
+| `GOOGLE_SHEET_NAME` | `Transazioni {ANNO_BUDGET}` | override del nome della scheda, per svincolarlo dall'anno |
+
+**Le due variabili nuove si chiamano come la costante che sovrascrivono.** Non c'è una
+seconda parola da ricordare né un prefisso da indovinare: letto `ANNO_BUDGET` nel codice, si
+sa già come esportarlo. Le due `BUDGET_BOZZA_*` sono anteriori a questa convenzione e non
+sono state rinominate: i test le usano, e cambiarle non avrebbe avuto niente a che fare con
+l'anno del budget.
+
+`ANNO_BUDGET` degrada diversamente da `BUDGET_BOZZA_TTL_MIN`: un TTL storto non compromette
+i dati e ripiega sul default, un anno storto sceglierebbe il **foglio sbagliato**. Meglio non
+partire. La stringa vuota vale in entrambi i casi come «non impostato».
 
 ### Dove vive la bozza
 
@@ -833,13 +852,13 @@ dire come si comporta *quel* modello.
   «Descrizione» farebbe fallire il test per collisione con il testo dello schema.
 
 > ⚠️ **`_TASSONOMIA_CACHE` è globale di processo e non viene mai invalidata**
-> ([`:174`](budget_sheets.py#L174)). Dopo aver modificato `tassonomia.yaml` sul server serve
+> ([`:175`](budget_sheets.py#L175)). Dopo aver modificato `tassonomia.yaml` sul server serve
 > un ricaricamento del plugin (o un riavvio del processo Hermes) perché la modifica abbia
 > effetto. Da CLI non si nota, perché ogni invocazione è un processo nuovo.
 
 ### 13.2 Cambiare un messaggio mostrato all'utente
 
-Unico posto: [`componi_messaggio()`](budget_sheets.py#L667). Non esistono copie altrove — è
+Unico posto: [`componi_messaggio()`](budget_sheets.py#L668). Non esistono copie altrove — è
 l'invariante I2. Controlla però le asserzioni letterali in `test_budget_sheets.py` e in
 [`eval_smemorato.py:196-204`](tests/eval_smemorato.py#L196-L204), che legge il testo mostrato
 per trovarci dentro il numero da digitare. `casi_eval.json` invece non contiene testo di
@@ -849,19 +868,25 @@ messaggi: i suoi `stati_attesi` sono nomi di stato.
 
 Tocca cinque punti, in quest'ordine:
 
-1. `CAMPI` ([`:69`](budget_sheets.py#L69)) — se il campo va persistito nella bozza;
+1. `CAMPI` ([`:70`](budget_sheets.py#L70)) — se il campo va persistito nella bozza;
 2. `CAMPI_TOOL` + `properties` in [`schemas.py`](schemas.py) — se il modello deve estrarlo;
 3. `normalizza()` — se serve validazione e una domanda dedicata (nuovo stato `chiedi_*`);
 4. `risolvi_risposta()` — la mappa stato→campo;
-5. `ETICHETTE` ([`:643`](budget_sheets.py#L643)) e `append_row()` — riepilogo e colonna.
+5. `ETICHETTE` ([`:644`](budget_sheets.py#L644)) e `append_row()` — riepilogo e colonna.
 
 Se aggiungi uno stato `chiedi_*`, aggiungi anche il ramo in `componi_messaggio()`: il
 fallback ritorna `dettaglio`, cioè stringa vuota, e l'utente vedrebbe un messaggio vuoto.
 
 ### 13.4 Cambiare il foglio a inizio anno
 
-`SHEET_NAME` a [`:40`](budget_sheets.py#L40). È una costante, non una variabile d'ambiente:
-serve una modifica al codice e un redeploy.
+Si cambia la costante `ANNO_BUDGET` a [`:40`](budget_sheets.py#L40), **un punto solo**: il
+nome della scheda ne discende. Serve una modifica al codice e un redeploy — l'esercizio non
+va configurato da ambiente, anche se la variabile omonima esiste: quella è per i test e per
+le prove.
+
+Se un giorno il foglio smettesse di parlare dell'anno — una scheda `Transazioni` che li
+tiene tutti — il nome si sgancia esportando `GOOGLE_SHEET_NAME`, o cambiando il default a
+[`:41`](budget_sheets.py#L41); e `ANNO_BUDGET` resta a dire quali date il budget accetta.
 
 ### 13.5 Modificare il comportamento del trigger
 
@@ -884,8 +909,8 @@ proprio perché misura il modello vero.
 `in_dialogo()` è definito come `stato_corrente().startswith("chiedi_")`. Lo stato
 `scrittura_in_corso` non inizia per `chiedi_`, quindi `in_dialogo()` ritorna `False`,
 quindi `forza_instradamento` imposta `nuova=True`, quindi `_turno` esegue `cancella_bozza()`
-alla [riga 865](budget_sheets.py#L865) — **cancellando il marcatore prima di leggerlo** alla
-[riga 868](budget_sheets.py#L868).
+alla [riga 865](budget_sheets.py#L866) — **cancellando il marcatore prima di leggerlo** alla
+[riga 868](budget_sheets.py#L869).
 
 La guardia scatta solo da CLI, invocata senza `--nuova`.
 
@@ -893,10 +918,10 @@ La guardia scatta solo da CLI, invocata senza `--nuova`.
 
 1. il turno 2 apre una transazione nuova a campi vuoti e comincia a chiedere;
 2. quando il turno 1 completa la scrittura, esegue `cancella_bozza()` alla
-   [riga 950](budget_sheets.py#L950) e **cancella la bozza del turno 2**;
+   [riga 950](budget_sheets.py#L951) e **cancella la bozza del turno 2**;
 3. l'utente risponde alla domanda del turno 2 e riceve `bozza_assente`.
 
-**Dove intervenire:** `in_dialogo()` ([`:827`](budget_sheets.py#L827)) — far sì che consideri
+**Dove intervenire:** `in_dialogo()` ([`:828`](budget_sheets.py#L828)) — far sì che consideri
 anche `scrittura_in_corso` come «dialogo in corso» — oppure spostare la guardia della riga
 868 prima del `if nuova` della riga 864.
 
@@ -909,7 +934,7 @@ una bozza scaduta la **cancella già lì** e ritorna la stringa `"scaduta"`. Qua
 esegue, il file non c'è più: `carica_bozza()` ritorna `None` e lo stato emesso è
 `bozza_assente`.
 
-Oggi è innocuo perché [`componi_messaggio:708`](budget_sheets.py#L708) rende i due stati con
+Oggi è innocuo perché [`componi_messaggio:708`](budget_sheets.py#L709) rende i due stati con
 lo stesso testo. Ma se un giorno si volesse dire «la transazione di prima è scaduta» invece
 di «non sto registrando niente», non basterebbe cambiare quel ramo.
 
@@ -938,7 +963,7 @@ potrebbero scambiarsi il messaggio.
 
 | Dove | Cosa |
 |---|---|
-| [`budget_sheets.py:964`](budget_sheets.py#L964) | l'help di `--categoria` dice `references/tassonomia.yaml`: quella cartella non esiste più |
+| [`budget_sheets.py:965`](budget_sheets.py#L965) | l'help di `--categoria` dice `references/tassonomia.yaml`: quella cartella non esiste più |
 | [`tests/eval_modello.py:78`](tests/eval_modello.py#L78) | stessa etichetta stantia nel prompt dell'eval |
 | [`tests/eval_protocollo.py:29`](tests/eval_protocollo.py#L29) | importa `TASSONOMIA` e non lo usa |
 | [`tests/casi_eval.json:8`](tests/casi_eval.json#L8) | un commento cita ancora `SKILL.md`, rimossa in `5eb3258` |
@@ -947,7 +972,7 @@ potrebbero scambiarsi il messaggio.
 ### 14.6 Interfaccia legacy a tipi misti
 
 I wrapper `validate_categoria`, `validate_sottocategoria`, `find_categoria_by_id`,
-`find_sottocategoria_by_id` ([`:290-334`](budget_sheets.py#L290-L334)) ritornano `False` in
+`find_sottocategoria_by_id` ([`:291-335`](budget_sheets.py#L291-L335)) ritornano `False` in
 caso di fallimento e una stringa (a volte `""`, che è falsy) in caso di successo. Sono
 l'interfaccia storica, usata solo dai test; il codice di produzione usa
 `trova_categoria`/`trova_sottocategoria`, che ritornano `None` o il dizionario. Non
