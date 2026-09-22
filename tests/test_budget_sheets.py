@@ -11,6 +11,7 @@ urlopen e' sempre sotto mock quando serve.
 import io
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -32,6 +33,19 @@ import budget_sheets as bs  # noqa: E402
 OGGI = datetime.now().strftime("%d/%m/%Y")
 CHIAVI = {"stato", "messaggio", "data", "importo", "categoria", "sottocategoria",
           "tipo", "descrizione", "note", "conferma", "opzioni", "intervallo"}
+
+
+def orologio_fisso(momento):
+    """Ferma bs.datetime.now() lasciando intatto il resto di datetime.
+
+    `wraps` e' la parte che conta, e non e' un dettaglio: senza, strptime
+    finirebbe su un Mock, non solleverebbe mai ValueError e validate_data
+    direbbe di si' a qualunque cosa. E' la differenza con
+    TestGuardiaAnno.orologio, che puo' farne a meno perche' li' si guarda solo
+    l'anno civile.
+    """
+    return mock.patch.object(bs, "datetime", wraps=datetime,
+                             **{"now.return_value": momento})
 
 
 # ─────────────────────────────────────────────
@@ -152,9 +166,14 @@ class TestDataRelativa(unittest.TestCase):
                 self.assertIs(self.relativa(valore), valore)
 
     def test_normalizza_le_risolve(self):
-        campi = bs.campi_vuoti()
-        campi.update({"data": "ieri", "importo": "10"})
-        campi, stato, _ = bs.normalizza(campi)
+        """L'orologio e' fermo, e non per abitudine: normalizza() non accetta un
+        `oggi` iniettabile, e col cancello dell'anno "ieri" detto il 1o gennaio
+        cadrebbe nell'anno prima. Senza questo freeze il test diventerebbe rosso
+        un giorno all'anno, senza che nessuno abbia toccato niente."""
+        with orologio_fisso(datetime(bs.ANNO_BUDGET, 9, 17)):
+            campi = bs.campi_vuoti()
+            campi.update({"data": "ieri", "importo": "10"})
+            campi, stato, _ = bs.normalizza(campi)
         self.assertNotEqual(stato, "chiedi_data", "la data relativa e' stata rifiutata")
         self.assertTrue(bs.validate_data(campi["data"]))
 
@@ -590,7 +609,7 @@ class TestNormalizza(unittest.TestCase):
         campi = self.campi(data="nonvalida", importo="boh", categoria="Pizza")
         _, stato, _ = bs.normalizza(campi)
         self.assertEqual(stato, "chiedi_data")
-        campi["data"] = "01/09/2026"
+        campi["data"] = f"01/09/{bs.ANNO_BUDGET}"
         _, stato, _ = bs.normalizza(campi)
         self.assertEqual(stato, "chiedi_importo")
         campi["importo"] = "30"
@@ -605,6 +624,76 @@ class TestNormalizza(unittest.TestCase):
         with mock.patch.object(bs, "_TASSONOMIA_CACHE", rotta):
             _, stato, _ = bs.normalizza(self.campi(importo="30", categoria="Ambigua"))
         self.assertEqual(stato, "errore_tassonomia")
+
+
+class TestAnnoUnico(unittest.TestCase):
+    """Niente entra da fuori l'anno del budget, da nessuna strada."""
+
+    def normalizza(self, data):
+        campi = bs.campi_vuoti()
+        campi.update({"data": data, "importo": "10"})
+        return bs.normalizza(campi)
+
+    def test_le_date_di_altri_anni_non_passano(self):
+        for data in (f"10/09/{bs.ANNO_BUDGET - 1}", "31/12/1999",
+                     f"10/09/{bs.ANNO_BUDGET + 1}"):
+            with self.subTest(data=data):
+                _, stato, _ = self.normalizza(data)
+                self.assertEqual(stato, "chiedi_data")
+
+    def test_dentro_l_anno_passa(self):
+        _, stato, _ = self.normalizza(f"10/09/{bs.ANNO_BUDGET}")
+        self.assertNotEqual(stato, "chiedi_data")
+
+    def test_il_messaggio_dice_la_verita(self):
+        """Fuori anno e malformata sono due cose diverse e non devono
+        scambiarsi il messaggio: il primo manderebbe l'utente a riscrivere la
+        stessa data, il secondo lo lascerebbe senza sapere cosa correggere."""
+        campi, stato, rifiutato = self.normalizza(f"10/09/{bs.ANNO_BUDGET - 1}")
+        fuori_anno = bs.componi_messaggio(stato, campi, rifiutato)
+        self.assertIn(str(bs.ANNO_BUDGET), fuori_anno)
+        self.assertIn("altro anno", fuori_anno)
+        self.assertNotIn("Non ho capito", fuori_anno)
+
+        campi, stato, rifiutato = self.normalizza(f"31/02/{bs.ANNO_BUDGET}")
+        rotta = bs.componi_messaggio(stato, campi, rifiutato)
+        self.assertIn("Non ho capito", rotta)
+        self.assertNotIn("altro anno", rotta)
+
+    def test_una_data_inesistente_di_un_altro_anno_resta_non_capita(self):
+        """L'ordine dei due controlli: "31/02/2025" non e' una data di un altro
+        anno, e' una data che non esiste. Il formato viene prima."""
+        campi, stato, rifiutato = self.normalizza(f"31/02/{bs.ANNO_BUDGET - 1}")
+        self.assertIn("Non ho capito", bs.componi_messaggio(stato, campi, rifiutato))
+
+    def test_l_esempio_suggerito_non_e_mai_una_data_che_si_rifiuta(self):
+        """Il giro chiuso da evitare: proporre 01/09/2026 con ANNO_BUDGET=2027
+        manderebbe l'utente a scrivere una data che il cancello poi rifiuta, e
+        se ne uscirebbe solo indovinando.
+
+        L'anno viene spostato *insieme* all'orologio: e' lo stato in cui si
+        trova il plugin il giorno dopo la migrazione di inizio anno, l'unico in
+        cui un letterale si vedrebbe. Con ANNO_BUDGET fermo all'anno civile —
+        come lo tiene la suite — un letterale passerebbe inosservato.
+        """
+        altro = bs.ANNO_BUDGET + 1
+        with mock.patch.object(bs, "ANNO_BUDGET", altro), \
+             orologio_fisso(datetime(altro, 3, 4)):
+            for rifiutato in ("", f"31/02/{altro}"):
+                with self.subTest(rifiutato=rifiutato):
+                    messaggio = bs.componi_messaggio("chiedi_data", bs.campi_vuoti(),
+                                                     rifiutato=rifiutato)
+                    esempio = re.search(r"per esempio (\d{2}/\d{2}/\d{4})", messaggio)
+                    self.assertIsNotNone(esempio, f"nessuna data d'esempio in «{messaggio}»")
+                    _, stato, _ = self.normalizza(esempio.group(1))
+                    self.assertNotEqual(stato, "chiedi_data",
+                                        "il plugin propone una data che poi rifiuta")
+
+    def test_validate_data_resta_un_controllo_di_formato(self):
+        """La regola dell'anno sta in normalizza, non qui: se un giorno qualcuno
+        la sposta dentro validate_data, questo test glielo dice."""
+        self.assertTrue(bs.validate_data("31/12/1999"))
+        self.assertTrue(bs.validate_data("29/02/2024"))
 
 
 class TestInterpretaConferma(unittest.TestCase):
@@ -764,7 +853,8 @@ class TestCli(ConBozza):
         self.assertEqual(payload["tipo"], "Uscita")
 
     def test_scrittura_dopo_conferma(self):
-        self.esegui("append", "--nuova", "--data", "01/09/2026", "--importo", "30",
+        data = f"01/09/{bs.ANNO_BUDGET}"
+        self.esegui("append", "--nuova", "--data", data, "--importo", "30",
                     "--categoria", "Cibo fuori / bevute", "--sottocategoria", "Ristorante",
                     "--descrizione", "Trattoria da Nino")
         payload, code, _ = self.esegui("append", "--risposta", "sì")
@@ -772,10 +862,33 @@ class TestCli(ConBozza):
         self.assertEqual(payload["stato"], "scritto")
         self.assertEqual(payload["intervallo"], "Transazioni 2026!A42:G42")
         self.assertEqual(self.scritte, [{
-            "data": "01/09/2026", "tipo": "Uscita", "categoria": "Cibo fuori / bevute",
+            "data": data, "tipo": "Uscita", "categoria": "Cibo fuori / bevute",
             "sottocategoria": "Ristorante", "importo": 30.0,
             "descrizione": "Trattoria da Nino", "note": ""}])
         self.assertFalse(os.path.exists(self.bozza), "la bozza va cancellata dopo la scrittura")
+
+    def test_una_data_fuori_anno_non_arriva_al_foglio_e_si_corregge(self):
+        """Le due cose che contano davvero, ed entrambe end-to-end.
+
+        Che non si scriva: il cancello sta in normalizza(), quindi il turno si
+        ferma prima di arrivare a Google. E che dal rifiuto si *esca*: e' l'unico
+        spec che toglie qualcosa a un utente, e un rifiuto senza via d'uscita
+        sarebbe un dialogo in cui si resta incastrati.
+        """
+        payload, code, _ = self.esegui(
+            "append", "--nuova", "--data", f"10/09/{bs.ANNO_BUDGET - 1}",
+            "--importo", "30", "--categoria", "Supermercato")
+        self.assertEqual(payload["stato"], "chiedi_data")
+        self.assertEqual(code, 3)
+        self.assertEqual(self.scritte, [], "una data fuori anno non deve toccare il foglio")
+        self.assertIn("altro anno", payload["messaggio"])
+        self.assertIn(str(bs.ANNO_BUDGET), payload["messaggio"])
+
+        payload, code, _ = self.esegui("append", "--risposta", f"10/09/{bs.ANNO_BUDGET}")
+        self.assertEqual(payload["stato"], "chiedi_conferma")
+        self.assertEqual(payload["data"], f"10/09/{bs.ANNO_BUDGET}")
+        self.assertEqual(payload["importo"], 30.0, "il resto della bozza e' sopravvissuto")
+        self.assertEqual(payload["categoria"], "Supermercato")
 
     def test_la_descrizione_arriva_sul_foglio_senza_essere_ripassata(self):
         """Prima descrizione e note scavalcavano la validazione: se chi chiamava

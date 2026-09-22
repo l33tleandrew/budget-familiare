@@ -66,9 +66,23 @@ Una voce in `casi_eval.json`:
 In `stati_attesi` vanno i nomi degli stati `chiedi_*` che lo script attraversa, uno per
 domanda posta, nell'ordine in cui le pone — non i messaggi mostrati all'utente.
 
-`OGGI` nei valori attesi vale la data odierna del sistema. I casi con
-`valuta_interpretazione: false` partono da un'interpretazione sbagliata di proposito,
-per provare il recupero: l'eval deterministica li usa, quella col modello li salta.
+### Date: mai scritte a mano
+
+Da quando le date fuori dall'anno del budget vengono rifiutate, un `2026` scritto a mano in
+un caso è una bomba a orologeria: verde finché `ANNO_BUDGET` è quello, rossa il giorno in cui
+si sposta. Quindi nei casi si usano tre segnaposto, e mai un anno letterale:
+
+| | Vale |
+|---|---|
+| `OGGI` | la data odierna del sistema — **solo** in `riga_attesa` |
+| `{ANNO}` | `ANNO_BUDGET`, ovunque nel caso: una data che si deve poter registrare |
+| `{ALTRO_ANNO}` | `ANNO_BUDGET - 1`: una data che il plugin **deve** rifiutare |
+
+`{ANNO}` e `{ALTRO_ANNO}` si risolvono al caricamento, in `carica_casi()`, quindi valgono in
+`messaggio`, `interpretazione`, `risposte` e `riga_attesa` allo stesso modo.
+
+I casi con `valuta_interpretazione: false` partono da un'interpretazione sbagliata di
+proposito, per provare il recupero: l'eval deterministica li usa, quella col modello li salta.
 
 ## L'eval col modello
 

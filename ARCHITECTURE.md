@@ -4,7 +4,7 @@
 > fatto così, e dove mettere le mani per cambiarlo. Descrive il codice com'è oggi, non
 > come dovrebbe essere. Quando il codice cambia, cambia anche questo file.
 
-**Versione plugin:** 1.0.0 · **Ultimo allineamento:** 2026-09-20 · **Commit:** `ce951a1`
+**Versione plugin:** 1.0.0 · **Ultimo allineamento:** 2026-09-22 · **Commit:** `ff8c3ad`
 
 ---
 
@@ -90,7 +90,7 @@ e per questo esiste un test che verifica che **nessun nome di categoria compaia 
 
 **b. I messaggi sono battute complete, non frammenti.** «Confermi?» da solo non è una frase
 che si possa ripetere, e chi la riceve fa la cosa ragionevole: la riscrive. Ogni messaggio
-composto da [`componi_messaggio()`](budget_sheets.py#L687) è autosufficiente — elenco
+composto da [`componi_messaggio()`](budget_sheets.py#L718) è autosufficiente — elenco
 numerato e riepilogo già dentro — così chi lo riceve ha **esattamente una cosa da stampare**,
 e stamparla è la strada facile.
 
@@ -126,7 +126,7 @@ budget-familiare/                 ← la radice del repo È la radice del plugin
     ├── test_budget_sheets.py  il motore (il file più grande: 56 KB)
     ├── test_plugin.py         le cinque superfici
     ├── test_schemas.py        cosa il modello NON deve sapere
-    ├── casi_eval.json         19 conversazioni complete, condivise dalle tre eval
+    ├── casi_eval.json         20 conversazioni complete, condivise dalle tre eval
     ├── eval_protocollo.py     rigioca le conversazioni, deterministica
     ├── eval_smemorato.py      eval avversariale: modelli che non ricordano niente
     └── eval_modello.py        opt-in, a pagamento: misura l'interpretazione reale
@@ -295,16 +295,16 @@ Circa 1000 righe, organizzate in strati. Dal basso verso l'alto:
 
 | Righe | Strato | Responsabilità |
 |---|---|---|
-| 36-69 | **Costanti** | percorsi, id del foglio, anno del budget, posizione e TTL della bozza |
-| 71-139 | **Auth** | OAuth: refresh del token, cache su file con margine di 60 s |
-| 141-168 | **HTTP** | `_api_request` con auto-retry una volta sola sul 401 |
-| 170-334 | **Tassonomia** | parsing di `tassonomia.yaml`, lookup per id/nome, derivazione del tipo |
-| 336-462 | **Validazione** | data (assoluta e relativa), anno del budget, importo (formati IT/EN), conferma |
-| 464-546 | **Bozza** | lock, load, save atomico, TTL |
-| 548-656 | **Logica del dialogo** | `unisci`, `normalizza`, `risolvi_risposta` |
-| 658-761 | **Messaggi** | `componi_messaggio` — il testo intero da mostrare |
-| 763-775 | **Sheets** | `append_row` |
-| 777-1024 | **Orchestrazione + CLI** | `esegui`, `_turno`, `main` |
+| 36-70 | **Costanti** | percorsi, id del foglio, anno del budget, posizione e TTL della bozza |
+| 72-140 | **Auth** | OAuth: refresh del token, cache su file con margine di 60 s |
+| 142-169 | **HTTP** | `_api_request` con auto-retry una volta sola sul 401 |
+| 171-335 | **Tassonomia** | parsing di `tassonomia.yaml`, lookup per id/nome, derivazione del tipo |
+| 337-491 | **Validazione** | data (assoluta e relativa), anno del budget, importo (formati IT/EN), conferma |
+| 493-575 | **Bozza** | lock, load, save atomico, TTL |
+| 577-688 | **Logica del dialogo** | `unisci`, `normalizza`, `risolvi_risposta` |
+| 690-802 | **Messaggi** | `componi_messaggio` — il testo intero da mostrare |
+| 804-816 | **Sheets** | `append_row` |
+| 818-1059 | **Orchestrazione + CLI** | `esegui`, `_turno`, `main` |
 
 Le funzioni che contano davvero sono quattro, e sono in §6.
 
@@ -332,8 +332,23 @@ scorso». Due scelte deliberate: `oggi` è iniettabile (un test che dipende dall
 fallisce a mezzanotte e nessuno capisce perché) e **non si guarda mai avanti** (una spesa la
 si registra dopo averla fatta; «domani» è quasi sempre un errore di battitura).
 
-**Anno del budget.** `anno_disallineato()` è la sola guardia che sta *fuori* dal flusso di
-`normalizza()`: non riguarda un campo ma la configurazione, quindi il suo posto è all'inizio
+**Anno del budget: due guardie, non una.** Il foglio tiene un anno solo, e il vincolo si
+applica in due punti che guardano cose diverse e non vanno confusi.
+
+`_nell_anno()` ([`:357`](budget_sheets.py#L357)) è la regola su **una data**, e vive dentro
+`normalizza()` insieme agli altri campi. Sta lì e non dentro `validate_data()` di proposito:
+quella è un predicato di **formato**, e il formato di `10/09/2025` è ineccepibile —
+`validate_data("31/12/1999")` è e resta `True`. Tenerle separate è ciò che permette al
+rifiuto di dire la verità: `componi_messaggio()` distingue i due casi e produce «Questo
+budget tiene solo il 2026, e «10/09/2025» è di un altro anno» invece di «non ho capito la
+data», che sarebbe falso e manderebbe l'utente a riscrivere la stessa data nello stesso
+formato. I due messaggi **non si scambiano mai**, e l'ordine dei controlli lo garantisce: il
+formato viene prima, perché `31/02/2025` non è una data di un altro anno, è una data che non
+esiste. Non c'è via di fuga e non è un'omissione: vedi le Decisioni di
+[SPEC-03](specs/03-vincolo-anno-sulle-date.md).
+
+`anno_disallineato()` è invece la guardia sulla **configurazione**, ed è la sola che sta
+*fuori* dal flusso di `normalizza()`: non riguarda un campo, quindi il suo posto è all'inizio
 del turno e non in coda alla validazione. A differenza delle date relative **non** ha un
 `oggi` iniettabile: lì l'orologio è l'unico ingresso, qui i lati del confronto sono due e la
 costante si patcha. Un parametro che la produzione non passa mai servirebbe solo a far dire
@@ -426,7 +441,7 @@ testo mostrato all'utente perché non è lui a scriverlo.
 
 ### Le quattro funzioni che contano
 
-#### `risolvi_risposta(stato, testo)` — [`:639`](budget_sheets.py#L639)
+#### `risolvi_risposta(stato, testo)` — [`:670`](budget_sheets.py#L670)
 
 **Il cuore del sistema.** Lo script sa che domanda ha fatto, quindi sa a quale campo
 appartiene la risposta:
@@ -442,7 +457,7 @@ ritorna `{}`.
 
 Questo è l'instradamento che prima toccava al modello, ed è dove sbagliava.
 
-#### `unisci(campi, nuovi)` — [`:564`](budget_sheets.py#L564)
+#### `unisci(campi, nuovi)` — [`:592`](budget_sheets.py#L592)
 
 Fonde i campi nuovi nella bozza, ignorando i `None`. Tre regole:
 
@@ -456,7 +471,7 @@ Fonde i campi nuovi nella bozza, ignorando i `None`. Tre regole:
    decadere una sottocategoria già scelta.
 3. **Qualsiasi modifica invalida una conferma già data.**
 
-#### `normalizza(campi)` — [`:588`](budget_sheets.py#L588)
+#### `normalizza(campi)` — [`:616`](budget_sheets.py#L616)
 
 Valida in **ordine fisso** e ritorna il **primo** problema trovato:
 
@@ -471,6 +486,11 @@ categoria «benzin».»).
 **Azzera solo il campo incriminato**, non quelli a valle: è la differenza con il vecchio
 gateway, che li cancellava tutti e obbligava il chiamante a ricordarseli.
 
+Il primo passo fa **tre cose**, in quest'ordine: risolve le forme relative
+(`normalizza_data_relativa()`), verifica il formato (`validate_data()`) e verifica l'anno
+(`_nell_anno()`). È l'unico punto da cui ogni data passa — relativa, parlata o in cifre — ed
+è il motivo per cui il vincolo d'anno sta qui e non dentro `validate_data()` (§4.5).
+
 Due comportamenti derivati dalla tassonomia, non dal chiamante:
 
 - se la categoria non prevede sottocategorie, `sottocategoria` viene forzata a `""` e non
@@ -479,17 +499,24 @@ Due comportamenti derivati dalla tassonomia, non dal chiamante:
 - se il tipo non è ricavabile (`entrambi` senza tipo sulla sottocategoria), lo stato è
   `errore_tassonomia`: è un errore di configurazione, non una domanda.
 
-#### `componi_messaggio(stato, campi, ...)` — [`:687`](budget_sheets.py#L687)
+#### `componi_messaggio(stato, campi, ...)` — [`:718`](budget_sheets.py#L718)
 
 Un ramo per stato, e ogni ramo ritorna il **testo intero** da mostrare, con elenco numerato
 o riepilogo già dentro. `_elenco()` numera con **l'id della tassonomia, non con la
 posizione**, così il contratto regge anche se un giorno gli id avranno dei buchi.
 
+`chiedi_data` è l'unico stato con due testi diversi: data non capita e data di un altro anno
+pongono la stessa domanda — «di che giorno?» — e la risposta va nello stesso campo, quindi
+la differenza è **solo di parole** e vive qui invece che in uno stato in più. Le date
+suggerite come esempio sono sempre `datetime.now()`: un letterale sarebbe una data che
+`_nell_anno()` finisce per rifiutare appena `ANNO_BUDGET` si muove, e il plugin arriverebbe a
+proporre una data che poi rifiuta.
+
 ### Gli stati
 
 | Stato | Significato | Bozza dopo | Exit CLI |
 |---|---|---|---|
-| `chiedi_data` | data assente o non valida | salvata | 3 |
+| `chiedi_data` | data assente, non valida, o di un altro anno | salvata | 3 |
 | `chiedi_importo` | importo assente o non valido | salvata | 3 |
 | `chiedi_categoria` | categoria assente o non riconosciuta | salvata | 3 |
 | `chiedi_sottocategoria` | sottocategoria assente o non riconosciuta | salvata | 3 |
@@ -798,7 +825,7 @@ e, se il worktree è sporco, fa `git add -A` + commit `auto-sync: <ts>` + `git p
 
 ## 12. Test ed eval
 
-277 test, tutti con la sola stdlib, in meno di mezzo secondo. `make test` li esegue tutti.
+288 test, tutti con la sola stdlib, in meno di mezzo secondo. `make test` li esegue tutti.
 
 | Comando | Cosa gira |
 |---|---|
@@ -862,7 +889,7 @@ dire come si comporta *quel* modello.
      `"\n2. Supermercato"`, `"\n17. Beneficienza"`
    - [`tests/eval_smemorato.py:203-204`](tests/eval_smemorato.py#L203-L204) —
      `"\n3. Cibo fuori / bevute"`, `"\n5. Ristorante"`
-   - `tests/casi_eval.json` — solo se tocchi una delle voci usate nei 19 casi
+   - `tests/casi_eval.json` — solo se tocchi una delle voci usate nei 20 casi
    - [`README.md:9-15`](README.md#L9-L15) — il dialogo d'esempio
 5. `make test`
 
@@ -881,7 +908,7 @@ dire come si comporta *quel* modello.
 
 ### 13.2 Cambiare un messaggio mostrato all'utente
 
-Unico posto: [`componi_messaggio()`](budget_sheets.py#L687). Non esistono copie altrove — è
+Unico posto: [`componi_messaggio()`](budget_sheets.py#L718). Non esistono copie altrove — è
 l'invariante I2. Controlla però le asserzioni letterali in `test_budget_sheets.py` e in
 [`eval_smemorato.py:196-204`](tests/eval_smemorato.py#L196-L204), che legge il testo mostrato
 per trovarci dentro il numero da digitare. `casi_eval.json` invece non contiene testo di
@@ -904,7 +931,7 @@ fallback ritorna `dettaglio`, cioè stringa vuota, e l'utente vedrebbe un messag
 
 **L'ordine conta: prima la scheda sul foglio, poi la costante.** Finché l'anno civile e
 `ANNO_BUDGET` non combaciano, `anno_disallineato()`
-([`:352`](budget_sheets.py#L352)) blocca ogni turno con lo stato `errore_anno` e il plugin
+([`:376`](budget_sheets.py#L376)) blocca ogni turno con lo stato `errore_anno` e il plugin
 non registra niente — lo dice nominando entrambi gli anni. È deliberato: la scheda del nuovo
 anno potrebbe non esistere ancora, e scrivere comunque su quella vecchia è peggio di un
 errore. L'unica cosa che resta possibile è `annulla`, perché chi ha un dialogo a metà deve
@@ -919,6 +946,15 @@ scheda ne discende. Serve una modifica al codice e un redeploy — l'esercizio n
 configurato da ambiente, anche se la variabile omonima esiste: quella è per i test e per le
 prove. Se ci si dimentica, se ne accorge `TestAnnoBudget.test_la_costante_e_allineata_all_anno_civile`,
 che diventa rosso da solo il 1° gennaio (vedi §11).
+
+**Cosa succede il giorno dopo.** Appena `ANNO_BUDGET` si sposta, `_nell_anno()` (§4.5) inizia
+a rifiutare tutto ciò che è datato l'anno prima — comprese «ieri» e «l'altro ieri» dei primi
+giorni di gennaio, che il plugin risolve *prima* di guardarle. Le spese di fine dicembre non
+si registrano più, e non c'è una via di fuga: è la conseguenza voluta di *«l'inserimento al
+di fuori dell'anno in corso non deve essere possibile, mai»*
+([SPEC-03](specs/03-vincolo-anno-sulle-date.md), «Decisioni»). Chi fa la migrazione deve
+saperlo — e chi ha spese di fine anno da registrare fa bene a registrarle **prima** di
+spostare la costante.
 
 Se un giorno il foglio smettesse di parlare dell'anno — una scheda `Transazioni` che li
 tiene tutti — il nome si sgancia esportando `GOOGLE_SHEET_NAME`, o cambiando il default a

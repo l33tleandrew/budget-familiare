@@ -339,7 +339,12 @@ def get_tipo(categoria, sottocategoria=""):
 # ─────────────────────────────────────────────
 
 def validate_data(data):
-    """Verifica che la stringa rispetti il formato gg/mm/aaaa (es. 01/09/2026)."""
+    """Verifica che la stringa rispetti il formato gg/mm/aaaa.
+
+    Solo il formato: l'anno del budget non lo guarda, ed e' deliberato. Qui
+    "31/12/1999" e' e resta valido; la regola secondo cui il foglio ne tiene uno
+    solo sta in _nell_anno(), che e' una regola e non una sintassi.
+    """
     if not isinstance(data, str) or not re.fullmatch(r"\d{2}/\d{2}/\d{4}", data):
         return False
     try:
@@ -347,6 +352,25 @@ def validate_data(data):
         return True
     except ValueError:
         return False
+
+
+def _nell_anno(data):
+    """True se la data gg/mm/aaaa e' dentro l'anno del budget.
+
+    Sta qui e non in validate_data di proposito: quella verifica il formato, e
+    il formato di "10/09/2025" e' ineccepibile. Questa e' la regola secondo cui
+    il foglio tiene un anno solo.
+
+    Non va confusa con anno_disallineato() qui sotto: le guardie d'anno sono
+    due e guardano cose diverse. Quella presidia la *configurazione* e ferma il
+    turno prima che cominci; questa presidia *una data* e vive dentro
+    normalizza(), accanto agli altri campi.
+
+    `endswith` e non uno strptime: la stringa arriva gia' validata, quindi e'
+    gg/mm/aaaa e il suffisso e' l'anno. Rileggere con un parser quello che e'
+    appena stato verificato aggiunge un modo di fallire, non sicurezza.
+    """
+    return data.endswith(f"/{ANNO_BUDGET}")
 
 
 def anno_disallineato():
@@ -603,7 +627,10 @@ def normalizza(campi):
     if not campi.get("data"):
         campi["data"] = datetime.now().strftime("%d/%m/%Y")
     campi["data"] = normalizza_data_relativa(campi["data"])
-    if not validate_data(campi["data"]):
+    # E' l'unico punto da cui ogni data passa: relativa, parlata o in cifre.
+    # Il formato prima dell'anno, e l'ordine non e' indifferente: "31/02/2025"
+    # non e' una data di un altro anno, e' una data che non esiste.
+    if not validate_data(campi["data"]) or not _nell_anno(campi["data"]):
         rifiutato, campi["data"] = campi["data"], ""
         return campi, "chiedi_data", rifiutato
 
@@ -697,10 +724,23 @@ def componi_messaggio(stato, campi, rifiutato="", tipo="", dettaglio=""):
     si possa ripetere, e chi la riceve fa la cosa ragionevole — la riscrive.
     """
     if stato == "chiedi_data":
+        if rifiutato and validate_data(rifiutato):
+            # Formato giusto, anno sbagliato: dirgli che non si e' capito
+            # sarebbe falso, e lo manderebbe a riscrivere la stessa data nello
+            # stesso formato. Niente esempio: il formato lo conosce gia'.
+            return (f"Questo budget tiene solo il {ANNO_BUDGET}, e «{rifiutato}» è di un "
+                    f"altro anno. Non posso registrarla qui. Di che giorno del "
+                    f"{ANNO_BUDGET} si tratta?")
+        # L'esempio e' oggi e non un 01/09 fisso: un letterale sarebbe una data
+        # che _nell_anno finisce per rifiutare appena ANNO_BUDGET si muove, e il
+        # plugin arriverebbe a suggerire una data che poi rifiuta. Che oggi sia
+        # dentro l'anno lo garantisce anno_disallineato(), che quando non lo e'
+        # ferma il turno prima e qui non ci si arriva.
+        esempio = datetime.now().strftime("%d/%m/%Y")
         if rifiutato:
             return (f"Non ho capito la data «{rifiutato}». Scrivila come gg/mm/aaaa, "
-                    "per esempio 01/09/2026.")
-        return "Di che giorno è? Scrivilo come gg/mm/aaaa, per esempio 01/09/2026."
+                    f"per esempio {esempio}.")
+        return f"Di che giorno è? Scrivilo come gg/mm/aaaa, per esempio {esempio}."
 
     if stato == "chiedi_importo":
         if rifiutato:

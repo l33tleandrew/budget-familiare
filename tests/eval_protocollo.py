@@ -39,9 +39,34 @@ INTERVALLO_FINTO = "Transazioni 2026!A99:G99"
 CAMPI_ESTRAIBILI = ("data", "importo", "categoria", "sottocategoria", "descrizione")
 
 
+def _segnaposto():
+    """Gli anni scritti nei casi, risolti al caricamento.
+
+    I valori di un caso finiscono in quattro posti diversi — `messaggio`,
+    `interpretazione`, `risposte`, `riga_attesa` — e l'unico che passava da
+    _atteso() era l'ultimo. Da quando le date fuori da ANNO_BUDGET vengono
+    rifiutate, un 2026 scritto a mano sarebbe una bomba a orologeria: verde
+    finche' l'anno del budget e' quello, rossa il giorno in cui si sposta.
+    Quindi la sostituzione sta qui, prima che i casi si dividano.
+    """
+    return {"{ANNO}": str(bs.ANNO_BUDGET), "{ALTRO_ANNO}": str(bs.ANNO_BUDGET - 1)}
+
+
+def _espandi(valore):
+    if isinstance(valore, str):
+        for segno, anno in _segnaposto().items():
+            valore = valore.replace(segno, anno)
+        return valore
+    if isinstance(valore, dict):
+        return {k: _espandi(v) for k, v in valore.items()}
+    if isinstance(valore, list):
+        return [_espandi(v) for v in valore]
+    return valore
+
+
 def carica_casi():
     with open(CASI_FILE, encoding="utf-8") as f:
-        return json.load(f)["casi"]
+        return _espandi(json.load(f)["casi"])
 
 
 def _atteso(valore):

@@ -208,9 +208,9 @@
     {
       "id": "data-esplicita",
       "descrizione": "Data nel messaggio: vince su oggi.",
-      "messaggio": "il 12/09/2026 ho pagato il bollo, 180",
+      "messaggio": "il 12/09/{ANNO} ho pagato il bollo, 180",
       "interpretazione": {
-        "data": "12/09/2026",
+        "data": "12/09/{ANNO}",
         "categoria": "Auto / Moto",
         "sottocategoria": "Bollo",
         "importo": "180.00",
@@ -225,7 +225,7 @@
       ],
       "esito": "scritta",
       "riga_attesa": {
-        "data": "12/09/2026",
+        "data": "12/09/{ANNO}",
         "tipo": "Uscita",
         "categoria": "Auto / Moto",
         "sottocategoria": "Bollo",
@@ -293,7 +293,7 @@
       "descrizione": "Interpretazione sbagliata apposta: data inesistente, poi corretta.",
       "messaggio": "il 31 febbraio ho pagato la palestra, 45",
       "interpretazione": {
-        "data": "31/02/2026",
+        "data": "31/02/{ANNO}",
         "categoria": "Sport",
         "sottocategoria": "Palestra",
         "importo": "45.00",
@@ -301,7 +301,7 @@
       },
       "valuta_interpretazione": false,
       "risposte": [
-        "12/09/2026",
+        "12/09/{ANNO}",
         "sì"
       ],
       "stati_attesi": [
@@ -310,11 +310,40 @@
       ],
       "esito": "scritta",
       "riga_attesa": {
-        "data": "12/09/2026",
+        "data": "12/09/{ANNO}",
         "tipo": "Uscita",
         "categoria": "Sport",
         "sottocategoria": "Palestra",
         "importo": 45.0
+      }
+    },
+    {
+      "id": "data-fuori-anno",
+      "descrizione": "Data di un altro anno: il foglio ne tiene uno solo. Si rifiuta dicendo la verità, e dal rifiuto si esce correggendo l'anno.",
+      "messaggio": "il 10/09/{ALTRO_ANNO} ho speso 40 al supermercato",
+      "interpretazione": {
+        "data": "10/09/{ALTRO_ANNO}",
+        "categoria": "Supermercato",
+        "sottocategoria": "",
+        "importo": "40.00",
+        "descrizione": "Spesa supermercato"
+      },
+      "valuta_interpretazione": false,
+      "risposte": [
+        "10/09/{ANNO}",
+        "sì"
+      ],
+      "stati_attesi": [
+        "chiedi_data",
+        "chiedi_conferma"
+      ],
+      "esito": "scritta",
+      "riga_attesa": {
+        "data": "10/09/{ANNO}",
+        "tipo": "Uscita",
+        "categoria": "Supermercato",
+        "sottocategoria": "",
+        "importo": 40.0
       }
     },
     {
