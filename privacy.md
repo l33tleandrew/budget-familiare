@@ -150,5 +150,5 @@ revision history is available in the project repository.
 
 ## 14. Contact
 
-For questions about this Privacy Policy, open an issue at
-<https://github.com/l33tleandrew/budget-familiare/issues>.
+For questions or requests about this Privacy Policy or your data, contact the
+Developer at <itsmypersonalagent@gmail.com>.
