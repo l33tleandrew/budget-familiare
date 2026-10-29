@@ -12,6 +12,7 @@ import io
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -71,30 +72,75 @@ class TestConfigurazione(unittest.TestCase):
     """
 
     def setUp(self):
+        self.profilo = self.cartella()
+
+    def cartella(self):
+        """Una directory temporanea, col percorso risolto: su macOS /var e' un
+        link a /private/var, e il percorso dello script importato arriva gia'
+        risolto."""
         d = tempfile.TemporaryDirectory()
         self.addCleanup(d.cleanup)
-        self.profilo = d.name
+        return os.path.realpath(d.name)
 
-    def importa(self, ambiente=None, dotenv=None):
-        """[GOOGLE_SPREADSHEET_ID, ANNO_BUDGET, PROFILE_DIR, TOKEN_FILE] da un import pulito."""
+    def installa(self, dove):
+        """Una copia dello script in `dove`, come la lascerebbe un'installazione."""
+        os.makedirs(dove)
+        shutil.copy(SCRIPT, dove)
+        return dove
+
+    def importa(self, ambiente=None, dotenv=None, da=SCRIPTS):
+        """[GOOGLE_SPREADSHEET_ID, ANNO_BUDGET, PROFILE_DIR, TOKEN_FILE] da un import pulito.
+
+        Lo script si importa dalla cartella `da`, nel profilo self.profilo
+        imposto con BUDGET_PROFILE_DIR. Un None in `ambiente` toglie la variabile.
+        """
         if dotenv is not None:
             with open(os.path.join(self.profilo, ".env"), "w") as f:
                 f.write(dotenv)
         env = {k: v for k, v in os.environ.items() if k not in bs.CONFIGURAZIONE}
-        env["HERMES_HOME"] = self.profilo
+        env["BUDGET_PROFILE_DIR"] = self.profilo
         env.update(ambiente or {})
+        env = {k: v for k, v in env.items() if v is not None}
         r = subprocess.run(
             [sys.executable, "-c",
              "import json, budget_sheets as b; print(json.dumps("
              "[b.GOOGLE_SPREADSHEET_ID, b.ANNO_BUDGET, b.PROFILE_DIR, b.TOKEN_FILE]))"],
-            capture_output=True, text=True, cwd=SCRIPTS, env=env)
+            capture_output=True, text=True, cwd=da, env=env)
         self.assertEqual(r.returncode, 0, f"l'import non deve fallire:\n{r.stderr}")
         return json.loads(r.stdout)
 
-    def test_il_profilo_e_hermes_home(self):
-        _, _, profilo, token = self.importa()
+    def test_il_profilo_e_quello_in_cui_il_plugin_e_installato(self):
+        """Il caso del server: HERMES_HOME del processo punta altrove (nel
+        container vale /opt/data), con un .env suo. Token e configurazione vanno
+        presi comunque dal profilo che contiene il plugin."""
+        altrove = self.cartella()
+        with open(os.path.join(altrove, ".env"), "w") as f:
+            f.write("GOOGLE_SPREADSHEET_ID=id-di-un-altro-profilo\n")
+        plugin = self.installa(os.path.join(self.profilo, "plugins", "budget-familiare"))
+        foglio, _, profilo, token = self.importa(
+            ambiente={"BUDGET_PROFILE_DIR": None, "HERMES_HOME": altrove},
+            dotenv="GOOGLE_SPREADSHEET_ID=id-del-profilo\n", da=plugin)
+        self.assertEqual(profilo, self.profilo)
+        self.assertEqual(token, os.path.join(self.profilo, "google_token.json"))
+        self.assertEqual(foglio, "id-del-profilo")
+
+    def test_budget_profile_dir_vince_sulla_posizione(self):
+        """E' quello che tiene la suite lontana dal profilo vero quando gira sul
+        server, cioe' dentro di esso."""
+        installato = self.cartella()
+        plugin = self.installa(os.path.join(installato, "plugins", "budget-familiare"))
+        _, _, profilo, token = self.importa(da=plugin)
         self.assertEqual(profilo, self.profilo)
         self.assertEqual(os.path.dirname(token), self.profilo)
+
+    def test_fuori_da_un_profilo_vale_il_default_di_hermes(self):
+        """Un checkout di sviluppo non e' installato in nessun profilo: due livelli
+        sopra c'e' una directory qualunque, che non va letta ne' scritta."""
+        casa = self.cartella()
+        checkout = self.installa(os.path.join(self.profilo, "progetti", "budget-familiare"))
+        _, _, profilo, _ = self.importa(
+            ambiente={"BUDGET_PROFILE_DIR": None, "HOME": casa}, da=checkout)
+        self.assertEqual(profilo, os.path.join(casa, ".hermes"))
 
     def test_senza_configurazione_non_c_e_niente_di_inventato(self):
         """Nessun foglio e nessun anno di default: un default nel sorgente e' il
@@ -103,7 +149,7 @@ class TestConfigurazione(unittest.TestCase):
         self.assertEqual((foglio, anno), ("", None))
 
     def test_letta_dal_env_del_profilo(self):
-        """Da una shell c'e' solo HERMES_HOME: il resto sta nel .env, scritto da
+        """Da una shell l'ambiente non ha niente: tutto sta nel .env, scritto da
         `hermes plugins install` nella forma che gli pare."""
         foglio, anno, _, _ = self.importa(dotenv=(
             "# scritto da hermes\n"

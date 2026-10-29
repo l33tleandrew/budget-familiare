@@ -34,5 +34,5 @@ optional_env:
 # Niente `capabilities`: non si fa override di tool ne' del modello, quindi
 # all'installazione non c'e' nessun consenso da chiedere.
 #
-# Le credenziali Google non stanno qui: sono file nel profilo (HERMES_HOME),
-# creati da setup_google.py.
+# Le credenziali Google non stanno qui: sono file nel profilo in cui il plugin e'
+# installato, creati da setup_google.py.

@@ -36,23 +36,50 @@ import json, os, re, sys, argparse, urllib.request, urllib.parse, time
 import contextlib, fcntl, tempfile, unicodedata
 from datetime import datetime, timedelta
 
-# Il profilo Hermes dell'istanza: `hermes -p <nome>` mette in HERMES_HOME la sua
-# directory, ed e' li' che stanno credenziali, token, .env e bozza. Niente in
-# questo file nomina un'istanza: tutto quello che cambia da una famiglia
-# all'altra si legge dal profilo.
-PROFILE_DIR       = os.environ.get("HERMES_HOME") or os.path.expanduser("~/.hermes")
+# Il profilo Hermes dell'istanza e' la cartella in cui il plugin e' installato:
+# Hermes lo mette in <profilo>/plugins/<nome>/, ed e' li' che stanno credenziali,
+# token, .env e bozza. Niente in questo file nomina un'istanza: tutto quello che
+# cambia da una famiglia all'altra si legge dal profilo.
+#
+# abspath e non realpath: un plugin collegato con un symlink appartiene al
+# profilo in cui sta il link, non a quello in cui sta il checkout.
+PLUGIN_DIR        = os.path.dirname(os.path.abspath(__file__))
+
+
+def _profilo():
+    """La cartella del profilo su cui il plugin e' installato.
+
+    Non si legge HERMES_HOME: dipende da come e' stato avviato il processo, e nel
+    container vale /opt/data anche quando il plugin sta in un profilo. La
+    posizione del plugin invece non sbaglia.
+
+    BUDGET_PROFILE_DIR la impone, ed e' per i test: sul server la suite gira
+    dentro il profilo vero, e non deve vederlo. Un checkout che non sta sotto
+    `plugins/` non e' installato in nessun profilo, e vale il default di Hermes.
+    """
+    imposto = os.environ.get("BUDGET_PROFILE_DIR")
+    if imposto:
+        return imposto
+    plugins = os.path.dirname(PLUGIN_DIR)
+    if os.path.basename(plugins) == "plugins":
+        return os.path.dirname(plugins)
+    return os.path.expanduser("~/.hermes")
+
+
+PROFILE_DIR       = _profilo()
 TOKEN_FILE        = f"{PROFILE_DIR}/google_token.json"
 CRED_FILE         = f"{PROFILE_DIR}/google_client_secret.json"
-TASSONOMIA_FILE   = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tassonomia.yaml")
+TASSONOMIA_FILE   = os.path.join(PLUGIN_DIR, "tassonomia.yaml")
 
 
 def _env_del_profilo():
-    """Le variabili del .env del profilo, per chi lancia lo script da una shell.
+    """Le variabili del .env del profilo su cui il plugin e' installato.
 
-    Dentro Hermes non servono: il .env del profilo e' gia' nell'ambiente, ed e'
-    li' che `hermes plugins install` salva le risposte a `requires_env`. Da un
-    terminale invece c'e' al massimo HERMES_HOME, e senza questo la CLI si
-    fermerebbe su una configurazione che esiste, e cosi' setup_google.py.
+    E' li' che `hermes plugins install` salva le risposte a `requires_env`.
+    Hermes lo carica nell'ambiente solo se il processo e' avviato su quel
+    profilo: da una shell, o con HERMES_HOME su un'altra cartella, senza questo
+    lo script si fermerebbe su una configurazione che esiste, e cosi'
+    setup_google.py.
 
     Il parser e' il minimo: CHIAVE=valore, commenti, `export`, apici. Un file
     assente o illeggibile vale come vuoto.

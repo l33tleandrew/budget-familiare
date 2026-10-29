@@ -18,11 +18,13 @@ import shutil
 import tempfile
 from datetime import datetime
 
-# Un profilo Hermes vuoto, sempre, anche quando la suite gira sul server: token,
-# credenziali, .env e bozza del profilo vero non devono essere raggiungibili.
-# Assegnato e non setdefault, perche' li' HERMES_HOME e' gia' impostato.
-os.environ["HERMES_HOME"] = tempfile.mkdtemp(prefix="budget_test_hermes_")
-atexit.register(shutil.rmtree, os.environ["HERMES_HOME"], True)
+# Un profilo Hermes vuoto, sempre, anche quando la suite gira sul server: li' il
+# repo sta dentro il profilo vero, e lo script lo ricaverebbe dalla sua
+# posizione. Token, credenziali, .env e bozza non devono essere raggiungibili.
+# Assegnato e non setdefault: un BUDGET_PROFILE_DIR rimasto esportato nella
+# shell potrebbe puntare proprio al profilo vero.
+os.environ["BUDGET_PROFILE_DIR"] = tempfile.mkdtemp(prefix="budget_test_profilo_")
+atexit.register(shutil.rmtree, os.environ["BUDGET_PROFILE_DIR"], True)
 
 # La configurazione dell'istanza. setdefault, cosi' `ANNO_BUDGET=2025 make test`
 # resta una prova possibile. L'anno e' quello civile: altrimenti la guardia sul

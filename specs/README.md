@@ -14,6 +14,7 @@ con criteri di accettazione che passano o falliscono. Si prendono in carico uno 
 | 04 | [Giorno e mese](04-date-parlate.md) | da fare | 01 |
 | 05 | [Configurazione per istanza](05-configurazione-per-istanza.md) | **fatto** | 01, 02 |
 | 06 | [Consenso OAuth incluso](06-consenso-oauth-incluso.md) | **fatto** | 05 |
+| 07 | [Il profilo dalla posizione del plugin](07-profilo-dalla-posizione-del-plugin.md) | **fatto** | 05 |
 
 Più un file che **non è uno spec**: [`arretrato-date.md`](arretrato-date.md), dove stanno le
 famiglie di date valutate e rinviate, con le misure che le motivano. Ha assorbito i due spec
@@ -31,7 +32,8 @@ a che fare con quelli.
  ├── 04  giorno e mese                ◆ la richiesta iniziale, prima versione
  │    └── arretrato-date.md           ◇ non uno spec: le voci rinviate
  └── 05  configurazione per istanza  ◆ il plugin su un'altra istanza Hermes (anche da 02)
-      └── 06  consenso OAuth incluso
+      ├── 06  consenso OAuth incluso
+      └── 07  profilo dalla posizione del plugin  ◆ correzione: HERMES_HOME sbagliava
 ```
 
 02, 03 e 04 sono fra loro indipendenti: dipendono solo da 01 e si possono prendere in

@@ -334,7 +334,7 @@ class TestCliSetup(unittest.TestCase):
 
     def lancia(self, *argv):
         with tempfile.TemporaryDirectory() as profilo:
-            env = {**os.environ, "HERMES_HOME": profilo}
+            env = {**os.environ, "BUDGET_PROFILE_DIR": profilo}
             return subprocess.run([sys.executable, os.path.join(SCRIPTS, "setup_google.py"),
                                    *argv], capture_output=True, text=True, env=env)
 

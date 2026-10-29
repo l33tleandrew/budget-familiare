@@ -247,6 +247,9 @@ aggiunge un'integrazione Google al profilo: chi installa vede comunque il `.env`
 
 ### `HERMES_HOME` e non la posizione del plugin
 
+> **Rivista da [SPEC-07](07-profilo-dalla-posizione-del-plugin.md).** In produzione
+> `HERMES_HOME` non puntava al profilo, e token e credenziali non si trovavano più.
+
 `PROFILE_DIR` si potrebbe ricavare da `__file__`, perché il plugin vive in
 `<profilo>/plugins/<nome>`. Sarebbe esatto in produzione e sbagliato ovunque altrove: un
 checkout di sviluppo, i test. `HERMES_HOME` è la variabile che Hermes stesso imposta e legge.

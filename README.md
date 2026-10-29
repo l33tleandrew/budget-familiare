@@ -31,15 +31,16 @@ il repo:
 
 ```bash
 git clone https://github.com/l33tleandrew/budget-familiare.git \
-    <HERMES_HOME>/plugins/budget-familiare
-hermes plugins doctor <HERMES_HOME>/plugins/budget-familiare --ci
+    <profilo>/plugins/budget-familiare
+hermes plugins doctor <profilo>/plugins/budget-familiare --ci
 hermes plugins enable budget-familiare
 ```
 
 ### Configurazione e credenziali
 
 Il codice non nomina nessuna istanza: lo stesso commit gira con fogli e account Google
-diversi. Tutto quello che è per-istanza sta nel profilo Hermes (`HERMES_HOME`):
+diversi. Tutto quello che è per-istanza sta nel profilo Hermes in cui il plugin è
+installato, cioè due livelli sopra la sua cartella (`<profilo>/plugins/budget-familiare`):
 
 | Nel profilo | Cosa contiene |
 |---|---|
@@ -88,8 +89,7 @@ le due righe vanno scritte nel `.env` del profilo.
 **4. Il consenso.** Copia il JSON del client in `<profilo>/google_client_secret.json`, poi:
 
 ```bash
-export HERMES_HOME=<directory del profilo>      # es. /opt/data/profiles/<profilo>
-cd $HERMES_HOME/plugins/budget-familiare
+cd <profilo>/plugins/budget-familiare      # es. /opt/data/profiles/<profilo>/plugins/…
 python3 setup_google.py url        # apri l'indirizzo e accedi con l'account della famiglia
 python3 setup_google.py codice "<l'indirizzo su cui è finito il browser>"
 python3 setup_google.py verifica   # una ✓ per riga: client, token, foglio, scheda, anno
@@ -145,17 +145,17 @@ modello deve sapere — quando attivarsi, cosa estrarre, come passarlo — sta n
 descrizione del tool e in quelle dei suoi parametri, in [schemas.py](schemas.py),
 che il system prompt porta con sé a ogni turno.
 
-Lo script resta una CLI funzionante, per l'uso a mano da un terminale. Da una shell
-`HERMES_HOME` va indicato a mano, perché è da lì che legge `.env` e credenziali:
+Lo script resta una CLI funzionante, per l'uso a mano da un terminale. `.env` e
+credenziali li legge dal profilo in cui è installato, quindi basta lanciare quella copia:
 
 ```bash
-HERMES_HOME=<profilo> python3 budget_sheets.py append --importo 30 --categoria Sport
+python3 <profilo>/plugins/budget-familiare/budget_sheets.py append --importo 30 --categoria Sport
 ```
 
 ## Test
 
 ```bash
-make test             # 329 test, nessuna rete, nessuna riga sul foglio
+make test             # 331 test, nessuna rete, nessuna riga sul foglio
 make plugin           # solo il plugin
 make eval             # rigioca le conversazioni di tests/casi_eval.json
 make eval-smemorato   # un modello che non ricorda niente deve arrivare in fondo

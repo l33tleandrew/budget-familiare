@@ -2,7 +2,8 @@
 """
 setup_google.py — il primo consenso OAuth di un'istanza, e la verifica che regga.
 
-Tre passi, da una shell con HERMES_HOME sul profilo dell'istanza:
+Tre passi, con la copia installata nel profilo dell'istanza
+(<profilo>/plugins/budget-familiare/): e' da li' che si ricava il profilo.
 
   python3 setup_google.py url                    # l'indirizzo da aprire nel browser
   python3 setup_google.py codice "<indirizzo>"   # quello su cui il browser e' finito
