@@ -10,12 +10,25 @@ basta.
 
 Questo modulo e' anche l'unico punto che ogni file di test importa *prima* di
 budget_sheets, quindi e' l'unico da cui si possa fissare l'ambiente che lo script
-legge all'import. Sotto ce n'e' uno solo, ed e' spiegato dov'e'.
+legge all'import. Ogni riga qui sotto e' spiegata dov'e'.
 """
+import atexit
 import os
+import shutil
+import tempfile
 from datetime import datetime
 
+# Un profilo Hermes vuoto, sempre, anche quando la suite gira sul server: token,
+# credenziali, .env e bozza del profilo vero non devono essere raggiungibili.
+# Assegnato e non setdefault, perche' li' HERMES_HOME e' gia' impostato.
+os.environ["HERMES_HOME"] = tempfile.mkdtemp(prefix="budget_test_hermes_")
+atexit.register(shutil.rmtree, os.environ["HERMES_HOME"], True)
+
+# La configurazione dell'istanza. setdefault, cosi' `ANNO_BUDGET=2025 make test`
+# resta una prova possibile. L'anno e' quello civile: altrimenti la guardia sul
+# cambio d'anno renderebbe rossa in blocco ogni prova che esegue un turno.
 os.environ.setdefault("ANNO_BUDGET", str(datetime.now().year))
+os.environ.setdefault("GOOGLE_SPREADSHEET_ID", "foglio-di-prova")
 
 REPO        = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCRIPT      = os.path.join(REPO, "budget_sheets.py")

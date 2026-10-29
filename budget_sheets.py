@@ -27,19 +27,84 @@ Exit code:
   2   errore_scrittura   bozza conservata
   5   errore_tassonomia  tipo non ricavabile: niente e' stato scritto
   6   errore_bozza       non si riesce a salvare lo stato del dialogo
+  7   errore_anno        anno civile diverso da ANNO_BUDGET: niente scritto
+  8   errore_configurazione
+                         manca GOOGLE_SPREADSHEET_ID o ANNO_BUDGET: niente scritto
   64  errore d'uso       argomenti sbagliati o sottocomando mancante
 """
 import json, os, re, sys, argparse, urllib.request, urllib.parse, time
 import contextlib, fcntl, tempfile, unicodedata
 from datetime import datetime, timedelta
 
-PROFILE_DIR       = "/opt/data/profiles/budgetingagent"
+# Il profilo Hermes dell'istanza: `hermes -p <nome>` mette in HERMES_HOME la sua
+# directory, ed e' li' che stanno credenziali, token, .env e bozza. Niente in
+# questo file nomina un'istanza: tutto quello che cambia da una famiglia
+# all'altra si legge dal profilo.
+PROFILE_DIR       = os.environ.get("HERMES_HOME") or os.path.expanduser("~/.hermes")
 TOKEN_FILE        = f"{PROFILE_DIR}/google_token.json"
 CRED_FILE         = f"{PROFILE_DIR}/google_client_secret.json"
-SPREADSHEET_ID    = "1iDYzjzyu_du_axBmzOzI6k4DrzV2Y52_UZTFMtM6JB0"
-ANNO_BUDGET       = int(os.environ.get("ANNO_BUDGET") or 2026)
-GOOGLE_SHEET_NAME = os.environ.get("GOOGLE_SHEET_NAME") or f"Transazioni {ANNO_BUDGET}"
 TASSONOMIA_FILE   = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tassonomia.yaml")
+
+
+def _env_del_profilo():
+    """Le variabili del .env del profilo, per chi lancia lo script da una shell.
+
+    Dentro Hermes non servono: il .env del profilo e' gia' nell'ambiente, ed e'
+    li' che `hermes plugins install` salva le risposte a `requires_env`. Da un
+    terminale invece c'e' al massimo HERMES_HOME, e senza questo la CLI si
+    fermerebbe su una configurazione che esiste, e cosi' setup_google.py.
+
+    Il parser e' il minimo: CHIAVE=valore, commenti, `export`, apici. Un file
+    assente o illeggibile vale come vuoto.
+    """
+    valori = {}
+    try:
+        with open(os.path.join(PROFILE_DIR, ".env"), encoding="utf-8") as f:
+            righe = f.readlines()
+    except OSError:
+        return valori
+    for riga in righe:
+        riga = riga.strip()
+        if not riga or riga.startswith("#") or "=" not in riga:
+            continue
+        chiave, _, valore = riga.removeprefix("export ").partition("=")
+        valore = valore.strip()
+        if len(valore) >= 2 and valore[0] == valore[-1] and valore[0] in "'\"":
+            valore = valore[1:-1]
+        valori[chiave.strip()] = valore
+    return valori
+
+
+_ENV_PROFILO = _env_del_profilo()
+
+
+def _config(nome):
+    """L'ambiente prima, il .env del profilo poi; "" se non c'e' in nessuno dei due.
+
+    La stringa vuota vale come "non impostato" in entrambi: `ANNO_BUDGET=` nel
+    .env non deve vincere su niente.
+    """
+    return (os.environ.get(nome) or _ENV_PROFILO.get(nome) or "").strip()
+
+
+def _anno(valore):
+    """L'anno se `valore` e' di quattro cifre, altrimenti None.
+
+    Un valore storto non fa fallire l'import, ed e' deliberato: un import
+    fallito lascia Hermes senza il tool, e a "benzina 50" risponderebbe il
+    modello per conto suo. Un anno mancante lo ferma configurazione_mancante(),
+    all'inizio del turno, con un messaggio dello script.
+    """
+    return int(valore) if re.fullmatch(r"\d{4}", valore) else None
+
+
+# Le impostazioni per-istanza. Ognuna si legge dalla variabile che porta il suo
+# stesso nome: e' quello che permette a configurazione_mancante() di trovarle
+# per nome, e a plugin.yaml di dichiararle in `requires_env`.
+GOOGLE_SPREADSHEET_ID = _config("GOOGLE_SPREADSHEET_ID")
+ANNO_BUDGET           = _anno(_config("ANNO_BUDGET"))
+GOOGLE_SHEET_NAME     = _config("GOOGLE_SHEET_NAME") or f"Transazioni {ANNO_BUDGET}"
+CONFIGURAZIONE        = ("GOOGLE_SPREADSHEET_ID", "ANNO_BUDGET")
 
 
 def _bozza_predefinita():
@@ -109,7 +174,7 @@ def _do_refresh(refresh_token, client_id, client_secret):
         if "invalid_grant" in body:
             raise RuntimeError(
                 "Il refresh_token e' scaduto o revocato da Google.\n"
-                "Devi rigenerare il token OAuth eseguendo il flusso setup.py.\n"
+                "Il consenso va rifatto: `python3 setup_google.py url`, poi `codice --force`.\n"
                 f"Dettaglio: {body}"
             )
         raise RuntimeError(f"Errore OAuth {e.code}: {body}")
@@ -396,7 +461,18 @@ def anno_disallineato():
     return datetime.now().year != ANNO_BUDGET
 
 
-_GIORNI = ("lunedi", "martedi", "mercoledi", "giovedi", "venerdi", "sabato", "domenica")
+def configurazione_mancante():
+    """I nomi delle impostazioni obbligatorie che mancano o non valgono.
+
+    E' la guardia che viene prima di anno_disallineato(): senza foglio non c'e'
+    dove scrivere, e senza anno quella non ha uno dei due lati del confronto —
+    direbbe "impostato sul None". Si cercano per nome perche' ogni costante si
+    chiama come la variabile da cui si legge (vedi CONFIGURAZIONE).
+    """
+    return [nome for nome in CONFIGURAZIONE if not globals()[nome]]
+
+
+_GIORNI =("lunedi", "martedi", "mercoledi", "giovedi", "venerdi", "sabato", "domenica")
 
 _GIORNI_FA = {"oggi": 0, "ieri": 1, "altro ieri": 2, "avantieri": 2, "avant ieri": 2}
 
@@ -794,6 +870,12 @@ def componi_messaggio(stato, campi, rifiutato="", tipo="", dettaglio=""):
                 "aggiornato: serve la scheda del nuovo anno sul foglio e l'anno "
                 "nuovo nella configurazione.")
 
+    if stato == "errore_configurazione":
+        mancanti = configurazione_mancante()
+        verbo = "va impostato" if len(mancanti) == 1 else "vanno impostati"
+        return (f"Il budget non è configurato su questa istanza: nel file .env del "
+                f"profilo Hermes {verbo} {' e '.join(mancanti)}. Non ho registrato niente.")
+
     if stato == "errore_tassonomia":
         dove = f"{campi.get('categoria')} / {campi.get('sottocategoria')}".strip(" /")
         return (f"Non riesco a capire se «{dove}» è un'entrata o un'uscita: la "
@@ -808,7 +890,7 @@ def componi_messaggio(stato, campi, rifiutato="", tipo="", dettaglio=""):
 def append_row(access_token, data, tipo, categoria, sottocategoria, importo, descrizione, note):
     row = [[data, tipo, categoria, sottocategoria, float(importo), descrizione, note]]
     url = (
-        f"https://sheets.googleapis.com/v4/spreadsheets/{SPREADSHEET_ID}"
+        f"https://sheets.googleapis.com/v4/spreadsheets/{GOOGLE_SPREADSHEET_ID}"
         f"/values/{urllib.parse.quote(GOOGLE_SHEET_NAME)}!A:G:append"
         f"?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS"
     )
@@ -826,6 +908,7 @@ EXIT = {
     "errore_tassonomia": 5,
     "errore_bozza": 6,
     "errore_anno": 7,
+    "errore_configurazione": 8,
 }
 
 
@@ -931,6 +1014,11 @@ def _turno(*, nuova, annulla, risposta, data, importo, categoria,
         if annulla:
             cancella_bozza()
             _emetti("annullata", campi_vuoti())
+
+        if configurazione_mancante():
+            # Dopo `annulla` per la stessa ragione della guardia d'anno, e prima
+            # di quella perche' con ANNO_BUDGET mancante non avrebbe senso.
+            _emetti("errore_configurazione", campi_vuoti())
 
         if anno_disallineato():
             _emetti("errore_anno", campi_vuoti())

@@ -100,14 +100,23 @@ class TestManifest(ConPlugin):
 
     def manifest(self):
         """Il manifest a mano: il parsing YAML non e' garantito nello stdlib, e
-        questi campi sono scalari e liste piatte."""
+        questi campi sono scalari e liste piatte.
+
+        Con un'eccezione: le voci di `requires_env` sono mappe. Di quelle si
+        tiene il `name:`, e gli attributi indentati di quattro spazi si saltano —
+        altrimenti la `description:` di una variabile prenderebbe il posto di
+        quella del plugin.
+        """
         dati, chiave = {}, None
         with open(PLUGIN_YAML, encoding="utf-8") as f:
             for riga in f:
                 if not riga.strip() or riga.lstrip().startswith("#"):
                     continue
+                if riga.startswith("    "):
+                    continue
                 if riga.startswith("  - "):
-                    dati.setdefault(chiave, []).append(riga[4:].strip())
+                    voce = riga[4:].strip()
+                    dati.setdefault(chiave, []).append(voce.removeprefix("name:").strip())
                 elif ":" in riga:
                     chiave, _, valore = riga.partition(":")
                     chiave, valore = chiave.strip(), valore.strip()
@@ -126,6 +135,13 @@ class TestManifest(ConPlugin):
 
     def test_hook_dichiarati_e_registrati_coincidono(self):
         self.assertEqual(set(self.manifest()["provides_hooks"]), set(self.ctx.hook))
+
+    def test_variabili_dichiarate_e_lette_coincidono(self):
+        """Quello che l'install chiede e' quello che lo script legge. Una
+        variabile letta e non dichiarata non verrebbe chiesta a nessuno, e
+        l'istanza nuova partirebbe con un errore_configurazione."""
+        self.assertEqual(self.manifest()["requires_env"],
+                         list(plugin.budget_sheets.CONFIGURAZIONE))
 
     def test_niente_capabilities(self):
         """Dichiararne una fa comparire un prompt di consenso all'installazione.

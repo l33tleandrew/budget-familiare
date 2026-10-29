@@ -36,17 +36,78 @@ hermes plugins doctor <HERMES_HOME>/plugins/budget-familiare --ci
 hermes plugins enable budget-familiare
 ```
 
-### Credenziali
+### Configurazione e credenziali
 
-Lo script si aspetta, nel profilo (`PROFILE_DIR` in `budget_sheets.py`):
+Il codice non nomina nessuna istanza: lo stesso commit gira con fogli e account Google
+diversi. Tutto quello che è per-istanza sta nel profilo Hermes (`HERMES_HOME`):
 
-| File | Cosa contiene |
+| Nel profilo | Cosa contiene |
 |---|---|
-| `google_client_secret.json` | credenziali OAuth del progetto Google Cloud |
-| `google_token.json` | token con refresh, dal primo consenso |
+| `.env` | `GOOGLE_SPREADSHEET_ID` e `ANNO_BUDGET`, chieste da `hermes plugins install`; facoltativa `GOOGLE_SHEET_NAME` (default `Transazioni <anno>`) |
+| `google_client_secret.json` | il client OAuth «App desktop» del progetto Google Cloud |
+| `google_token.json` | token con refresh, creato da `setup_google.py` |
 
-ID del foglio, nome della scheda e percorso del profilo sono costanti in cima a
-`budget_sheets.py`.
+Se manca l'id del foglio o l'anno, il plugin non registra niente: risponde che non è
+configurato e nomina la variabile da impostare. L'anno si cambia nel `.env`, dopo aver
+creato la scheda del nuovo anno sul foglio, e poi si riavvia Hermes.
+
+### Su un'istanza nuova, passo per passo
+
+Una volta per istanza. Servono l'account Google della famiglia e una shell sul server.
+
+**1. Google Cloud.** Nella [Google Cloud Console](https://console.cloud.google.com/):
+
+- abilita la **Google Sheets API**;
+- nella schermata di consenso OAuth, aggiungi lo scope `…/auth/spreadsheets`;
+- crea una credenziale **ID client OAuth, tipo «App desktop»** e scarica il JSON.
+
+Si può anche riusare il client di un'altra istanza: identifica l'app, non la famiglia.
+
+> ⚠️ Se l'app è in stato **«Testing»**, l'account va aggiunto agli utenti di test, e Google
+> fa scadere i refresh token dopo **7 giorni**: una volta a settimana il plugin risponderebbe
+> che le credenziali vanno rigenerate. Per un uso stabile l'app va pubblicata («In
+> production»).
+
+**2. Il foglio.** Nell'account della famiglia, un foglio con una scheda
+`Transazioni <anno>` (es. `Transazioni 2026`). Il plugin scrive sette colonne, da A a G:
+data, tipo, categoria, sottocategoria, importo, descrizione, note. Conviene metterle come
+intestazioni in riga 1. L'id è nell'URL: `https://docs.google.com/spreadsheets/d/<ID>/edit`.
+
+**3. Il plugin.**
+
+```bash
+hermes -p <profilo> plugins install l33tleandrew/budget-familiare --ref <sha-40>
+#   GOOGLE_SPREADSHEET_ID: <l'id del foglio>
+#   ANNO_BUDGET: 2026
+hermes -p <profilo> plugins enable budget-familiare
+```
+
+Senza `-p` vale il profilo attivo. Se invece si clona il repo a mano, nessuno chiede niente:
+le due righe vanno scritte nel `.env` del profilo.
+
+**4. Il consenso.** Copia il JSON del client in `<profilo>/google_client_secret.json`, poi:
+
+```bash
+export HERMES_HOME=<directory del profilo>      # es. /opt/data/profiles/<profilo>
+cd $HERMES_HOME/plugins/budget-familiare
+python3 setup_google.py url        # apri l'indirizzo e accedi con l'account della famiglia
+python3 setup_google.py codice "<l'indirizzo su cui è finito il browser>"
+python3 setup_google.py verifica   # una ✓ per riga: client, token, foglio, scheda, anno
+```
+
+Il browser può stare su un altro computer. Dopo il consenso si ferma su
+`http://localhost:1/…`, una pagina che non si carica: è normale, si copia l'indirizzo dalla
+barra. `codice` non sostituisce un `google_token.json` già presente senza `--force`, perché
+potrebbe appartenere a un'altra integrazione Google del profilo.
+
+**5. La prova.** Riavvia Hermes e registra una spesa vera con `/spesa`: la riga deve
+comparire sul foglio.
+
+**Da non fare:** non installare il cron di `scripts/sync_budget_skill.sh`. Serve all'istanza
+di sviluppo; da una seconda spingerebbe su `main` anche lei.
+
+**Ogni anno:** prima crea la scheda `Transazioni <anno nuovo>` sul foglio, poi cambia
+`ANNO_BUDGET` nel `.env` e riavvia Hermes. `setup_google.py verifica` dice se tornano.
 
 ## Com'è fatto
 
@@ -57,11 +118,12 @@ modello quello che non è comprensione del linguaggio, una superficie per volta.
 
 ```
 budget-familiare/
-├── plugin.yaml          manifest: tool e hook dichiarati
+├── plugin.yaml          manifest: tool, hook e variabili per istanza
 ├── __init__.py          register(ctx): le cinque superfici di vincolo
 ├── schemas.py           schema del tool — qui vive il trigger
 ├── tools.py             handler + la cassetta della resa verbatim
 ├── budget_sheets.py     il motore: macchina a stati, bozza, Google Sheets
+├── setup_google.py      il consenso OAuth di un'istanza nuova, e la verifica
 └── tassonomia.yaml      le categorie (dato, non codice)
 ```
 
@@ -83,16 +145,17 @@ modello deve sapere — quando attivarsi, cosa estrarre, come passarlo — sta n
 descrizione del tool e in quelle dei suoi parametri, in [schemas.py](schemas.py),
 che il system prompt porta con sé a ogni turno.
 
-Lo script resta una CLI funzionante, per l'uso a mano da un terminale:
+Lo script resta una CLI funzionante, per l'uso a mano da un terminale. Da una shell
+`HERMES_HOME` va indicato a mano, perché è da lì che legge `.env` e credenziali:
 
 ```bash
-python3 budget_sheets.py append --importo 30 --categoria Sport
+HERMES_HOME=<profilo> python3 budget_sheets.py append --importo 30 --categoria Sport
 ```
 
 ## Test
 
 ```bash
-make test             # 267 test, nessuna rete, nessuna riga sul foglio
+make test             # 329 test, nessuna rete, nessuna riga sul foglio
 make plugin           # solo il plugin
 make eval             # rigioca le conversazioni di tests/casi_eval.json
 make eval-smemorato   # un modello che non ricorda niente deve arrivare in fondo

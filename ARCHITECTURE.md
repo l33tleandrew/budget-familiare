@@ -90,7 +90,7 @@ e per questo esiste un test che verifica che **nessun nome di categoria compaia 
 
 **b. I messaggi sono battute complete, non frammenti.** «Confermi?» da solo non è una frase
 che si possa ripetere, e chi la riceve fa la cosa ragionevole: la riscrive. Ogni messaggio
-composto da [`componi_messaggio()`](budget_sheets.py#L718) è autosufficiente — elenco
+composto da [`componi_messaggio()`](budget_sheets.py#L794) è autosufficiente — elenco
 numerato e riepilogo già dentro — così chi lo riceve ha **esattamente una cosa da stampare**,
 e stamparla è la strada facile.
 
@@ -107,11 +107,12 @@ dei parametri lì dentro **non sono documentazione, sono il prompt**.
 ```
 budget-familiare/                 ← la radice del repo È la radice del plugin
 │
-├── plugin.yaml            manifest: dichiara tool e hook a Hermes
+├── plugin.yaml            manifest: dichiara tool, hook e variabili per istanza a Hermes
 ├── __init__.py            register(ctx): le cinque superfici di vincolo
 ├── schemas.py             schema del tool — qui vive il trigger, qui vive il prompt
 ├── tools.py               handler del tool + la "cassetta" della resa verbatim
 ├── budget_sheets.py       il motore: macchina a stati, bozza, validazione, Google Sheets
+├── setup_google.py        il consenso OAuth di un'istanza nuova, e la verifica (§11)
 ├── tassonomia.yaml        le categorie (dato, non codice)
 │
 ├── Makefile               le quattro suite di test
@@ -126,6 +127,7 @@ budget-familiare/                 ← la radice del repo È la radice del plugin
     ├── test_budget_sheets.py  il motore (il file più grande: 56 KB)
     ├── test_plugin.py         le cinque superfici
     ├── test_schemas.py        cosa il modello NON deve sapere
+    ├── test_setup_google.py   il consenso OAuth e la verifica, sotto mock
     ├── casi_eval.json         20 conversazioni complete, condivise dalle tre eval
     ├── eval_protocollo.py     rigioca le conversazioni, deterministica
     ├── eval_smemorato.py      eval avversariale: modelli che non ricordano niente
@@ -147,16 +149,22 @@ mano (§4.6). L'unica eccezione è `tests/eval_modello.py`, opt-in, che chiede l
 Dichiara a Hermes cosa il plugin fornisce: un tool (`registra_transazione`) e quattro hook.
 `api_version: "1.0"`, `manifest_version: 2`.
 
-Due assenze intenzionali, documentate nel file stesso:
+Dichiara anche **cosa cambia da un'istanza all'altra**, in `requires_env`:
+`GOOGLE_SPREADSHEET_ID` e `ANNO_BUDGET`. `hermes plugins install` le chiede una per una e le
+salva nel `.env` del profilo; `optional_env` elenca `GOOGLE_SHEET_NAME`, che l'install non
+chiede. Se una variabile manca, ogni turno finisce in `errore_configurazione` (§11). La guida
+di Hermes dice anche che un plugin con una `requires_env` mancante viene disabilitato, ma nel
+codice del loader non risulta: il plugin non ci conta, e la guardia vale in entrambi i casi.
 
-- **niente `capabilities`**: non si fa override di tool né del modello, quindi
-  all'installazione non c'è nessun consenso da chiedere all'utente;
-- **niente `requires_env`**: le credenziali Google e l'id del foglio stanno nel profilo
-  (`PROFILE_DIR`), non nell'ambiente.
+Un'assenza intenzionale, documentata nel file stesso: **niente `capabilities`**. Non si fa
+override di tool né del modello, quindi all'installazione non c'è nessun consenso da
+chiedere all'utente.
 
-> ⚠️ Il manifest e le registrazioni in `register()` devono restare allineati: c'è un test
-> che lo verifica ([`tests/test_plugin.py`](tests/test_plugin.py)). Aggiungere un hook in
-> `__init__.py` senza dichiararlo qui fa fallire la suite.
+> ⚠️ Il manifest e il codice devono restare allineati, in due punti: le registrazioni in
+> `register()` e le variabili di `CONFIGURAZIONE` in `budget_sheets.py`. Ci sono test che
+> lo verificano ([`tests/test_plugin.py`](tests/test_plugin.py)): aggiungere un hook in
+> `__init__.py`, o una variabile obbligatoria al motore, senza dichiararlo qui fa fallire la
+> suite.
 
 ### 4.2 `__init__.py` — le cinque superfici
 
@@ -291,20 +299,20 @@ Il corpo è breve: filtra `args` per `CAMPI_TOOL` scartando i `None`, forza
 
 ### 4.5 `budget_sheets.py` — il motore
 
-Circa 1000 righe, organizzate in strati. Dal basso verso l'alto:
+Circa 1150 righe, organizzate in strati. Dal basso verso l'alto:
 
 | Righe | Strato | Responsabilità |
 |---|---|---|
-| 36-70 | **Costanti** | percorsi, id del foglio, anno del budget, posizione e TTL della bozza |
-| 72-140 | **Auth** | OAuth: refresh del token, cache su file con margine di 60 s |
-| 142-169 | **HTTP** | `_api_request` con auto-retry una volta sola sul 401 |
-| 171-335 | **Tassonomia** | parsing di `tassonomia.yaml`, lookup per id/nome, derivazione del tipo |
-| 337-491 | **Validazione** | data (assoluta e relativa), anno del budget, importo (formati IT/EN), conferma |
-| 493-575 | **Bozza** | lock, load, save atomico, TTL |
-| 577-688 | **Logica del dialogo** | `unisci`, `normalizza`, `risolvi_risposta` |
-| 690-802 | **Messaggi** | `componi_messaggio` — il testo intero da mostrare |
-| 804-816 | **Sheets** | `append_row` |
-| 818-1059 | **Orchestrazione + CLI** | `esegui`, `_turno`, `main` |
+| 39-135 | **Costanti e configurazione** | percorsi dal profilo, lettura di ambiente e `.env`, id del foglio, anno del budget, posizione e TTL della bozza |
+| 137-205 | **Auth** | OAuth: refresh del token, cache su file con margine di 60 s |
+| 207-234 | **HTTP** | `_api_request` con auto-retry una volta sola sul 401 |
+| 236-400 | **Tassonomia** | parsing di `tassonomia.yaml`, lookup per id/nome, derivazione del tipo |
+| 402-567 | **Validazione** | data (assoluta e relativa), anno del budget, configurazione, importo (formati IT/EN), conferma |
+| 569-651 | **Bozza** | lock, load, save atomico, TTL |
+| 653-764 | **Logica del dialogo** | `unisci`, `normalizza`, `risolvi_risposta` |
+| 766-884 | **Messaggi** | `componi_messaggio` — il testo intero da mostrare |
+| 886-898 | **Sheets** | `append_row` |
+| 900-1147 | **Orchestrazione + CLI** | `esegui`, `_turno`, `main` |
 
 Le funzioni che contano davvero sono quattro, e sono in §6.
 
@@ -335,7 +343,7 @@ si registra dopo averla fatta; «domani» è quasi sempre un errore di battitura
 **Anno del budget: due guardie, non una.** Il foglio tiene un anno solo, e il vincolo si
 applica in due punti che guardano cose diverse e non vanno confusi.
 
-`_nell_anno()` ([`:357`](budget_sheets.py#L357)) è la regola su **una data**, e vive dentro
+`_nell_anno()` ([`:422`](budget_sheets.py#L422)) è la regola su **una data**, e vive dentro
 `normalizza()` insieme agli altri campi. Sta lì e non dentro `validate_data()` di proposito:
 quella è un predicato di **formato**, e il formato di `10/09/2025` è ineccepibile —
 `validate_data("31/12/1999")` è e resta `True`. Tenerle separate è ciò che permette al
@@ -371,7 +379,7 @@ che deve averne uno esplicito.
 
 #### ⚠️ Vincoli di formato
 
-`leggi_tassonomia()` ([`budget_sheets.py:178`](budget_sheets.py#L178)) è un **parser a
+`leggi_tassonomia()` ([`budget_sheets.py:243`](budget_sheets.py#L243)) è un **parser a
 espressioni regolari riga per riga, non PyYAML**, perché sul server non si possono
 installare pacchetti. Di conseguenza l'indentazione è semanticamente carica:
 
@@ -441,7 +449,7 @@ testo mostrato all'utente perché non è lui a scriverlo.
 
 ### Le quattro funzioni che contano
 
-#### `risolvi_risposta(stato, testo)` — [`:670`](budget_sheets.py#L670)
+#### `risolvi_risposta(stato, testo)` — [`:746`](budget_sheets.py#L746)
 
 **Il cuore del sistema.** Lo script sa che domanda ha fatto, quindi sa a quale campo
 appartiene la risposta:
@@ -457,7 +465,7 @@ ritorna `{}`.
 
 Questo è l'instradamento che prima toccava al modello, ed è dove sbagliava.
 
-#### `unisci(campi, nuovi)` — [`:592`](budget_sheets.py#L592)
+#### `unisci(campi, nuovi)` — [`:668`](budget_sheets.py#L668)
 
 Fonde i campi nuovi nella bozza, ignorando i `None`. Tre regole:
 
@@ -471,7 +479,7 @@ Fonde i campi nuovi nella bozza, ignorando i `None`. Tre regole:
    decadere una sottocategoria già scelta.
 3. **Qualsiasi modifica invalida una conferma già data.**
 
-#### `normalizza(campi)` — [`:616`](budget_sheets.py#L616)
+#### `normalizza(campi)` — [`:692`](budget_sheets.py#L692)
 
 Valida in **ordine fisso** e ritorna il **primo** problema trovato:
 
@@ -499,7 +507,7 @@ Due comportamenti derivati dalla tassonomia, non dal chiamante:
 - se il tipo non è ricavabile (`entrambi` senza tipo sulla sottocategoria), lo stato è
   `errore_tassonomia`: è un errore di configurazione, non una domanda.
 
-#### `componi_messaggio(stato, campi, ...)` — [`:718`](budget_sheets.py#L718)
+#### `componi_messaggio(stato, campi, ...)` — [`:794`](budget_sheets.py#L794)
 
 Un ramo per stato, e ogni ramo ritorna il **testo intero** da mostrare, con elenco numerato
 o riepilogo già dentro. `_elenco()` numera con **l'id della tassonomia, non con la
@@ -531,11 +539,12 @@ proporre una data che poi rifiuta.
 | `errore_tassonomia` | tipo non ricavabile | **non toccata** | 5 |
 | `errore_bozza` | non si riesce a salvare lo stato | non salvabile | 6 |
 | `errore_anno` | anno civile ≠ `ANNO_BUDGET` | **non toccata** | 7 |
+| `errore_configurazione` | manca `GOOGLE_SPREADSHEET_ID` o `ANNO_BUDGET` | **non toccata** | 8 |
 
 Gli exit code valgono per l'uso da CLI; passando dal plugin conta solo `stato`. Il default è
 3 (`EXIT.get(payload["stato"], 3)`), che copre tutti gli stati di dialogo e quelli terminali
-benigni. `1, 2, 5, 6, 7` sono la sequenza degli errori: il 7 la continua invece di infilarsi
-in mezzo agli stati benigni.
+benigni. `1, 2, 5, 6, 7, 8` sono la sequenza degli errori: il 7 e l'8 la continuano invece di
+infilarsi in mezzo agli stati benigni.
 
 **Due scelte di recupero che vale la pena conoscere:**
 
@@ -578,9 +587,10 @@ MESSAGGIO UTENTE
 │            └─ _turno()  ── dentro flock ──
 │               │
 │               ├─ annulla=True ──────────────────────► «annullata»            ✓ cancellata
+│               ├─ configurazione_mancante() ─────────► «errore_configurazione» ✗ bozza intatta
 │               ├─ anno_disallineato() ───────────────► «errore_anno»          ✗ bozza intatta
-│               │     └─ dopo `annulla` di proposito: chiudere una bozza aperta
-│               │        non scrive niente e non deve restare impossibile
+│               │     └─ entrambe dopo `annulla` di proposito: chiudere una bozza
+│               │        aperta non scrive niente e non deve restare impossibile
 │               ├─ nuova=True → cancella_bozza()
 │               ├─ stato == "scrittura_in_corso" ─────► «scrittura_in_corso»   (vedi §14.1)
 │               ├─ risposta≠None ma nessuna bozza ────► «bozza_assente/scaduta»
@@ -636,7 +646,7 @@ transform_llm_output → la risposta finale È il testo di componi_messaggio()
 }
 ```
 
-`CAMPI` (i sette campi persistiti) è definito a [`:70`](budget_sheets.py#L70). Nota che
+`CAMPI` (i sette campi persistiti) è definito a [`:135`](budget_sheets.py#L135). Nota che
 `tipo` **non** è un campo persistito: si ricava a ogni turno dalla tassonomia con
 `tipo_di()`. È l'unica scelta che garantisce che una correzione della tassonomia si applichi
 anche a una bozza aperta.
@@ -668,7 +678,7 @@ esistono per la CLI, i test e la diagnostica.
 
 ### Il lock
 
-`_bozza_lock()` ([`:451`](budget_sheets.py#L451)) è un `flock` esclusivo su
+`_bozza_lock()` ([`:574`](budget_sheets.py#L574)) è un `flock` esclusivo su
 `<BOZZA_FILE>.lock`, esposto come context manager. Serializza il ciclo
 **leggi → fondi → scrivi**: senza, due invocazioni ravvicinate leggono la stessa bozza e la
 seconda scrittura perde il campo della prima.
@@ -724,28 +734,47 @@ fallisce — ed è voluto.
 | I5 | L'handler non solleva mai e ritorna sempre una stringa JSON | `tests/test_plugin.py` |
 | I6 | `nuova` deriva dal disco, mai dal modello | `tests/test_plugin.py` |
 | I7 | `transform_llm_output` sostituisce la risposta col testo dello script | `tests/test_plugin.py` |
-| I8 | I numeri mostrati sono gli id della tassonomia, non le posizioni | `tests/test_budget_sheets.py:~640` |
-| I9 | Non si chiede mai una sottocategoria a una categoria che non ne ha | `tests/test_budget_sheets.py:936` |
+| I8 | I numeri mostrati sono gli id della tassonomia, non le posizioni | `tests/test_budget_sheets.py:819` |
+| I9 | Non si chiede mai una sottocategoria a una categoria che non ne ha | `tests/test_budget_sheets.py:648` |
 | I10 | Niente arriva sul foglio senza una conferma esplicita | `tests/eval_protocollo.py` |
 | I11 | La suite non tocca mai la rete né il foglio vero | mock con `side_effect` che solleva |
 | I12 | Con l'anno disallineato non arriva niente sul foglio | `tests/test_budget_sheets.py` (`TestGuardiaAnno`) |
+| I13 | Senza id del foglio o senza anno non arriva niente sul foglio | `tests/test_budget_sheets.py` (`TestGuardiaConfigurazione`) |
+| I14 | Il codice non nomina nessuna istanza: niente id del foglio, anno o profilo di default | `tests/test_budget_sheets.py` (`TestConfigurazione`) |
+| I15 | `requires_env` del manifest = `CONFIGURAZIONE` del motore | `tests/test_plugin.py` |
+| I16 | La suite non vede mai un profilo vero: `HERMES_HOME` è sempre una directory vuota | `tests/percorsi.py` |
 
 ---
 
 ## 11. Configurazione e deploy
 
+### Dove sta la configurazione
+
+Il codice non nomina nessuna istanza. Tutto quello che cambia da una famiglia all'altra sta
+nel **profilo Hermes**, la directory che `hermes -p <nome>` mette in `HERMES_HOME`:
+
+| Nel profilo | Cosa contiene | Chi lo crea |
+|---|---|---|
+| `.env` | `GOOGLE_SPREADSHEET_ID`, `ANNO_BUDGET`, eventualmente `GOOGLE_SHEET_NAME` | `hermes plugins install`, che le chiede; o a mano |
+| `google_client_secret.json` | il client OAuth «App desktop» del progetto Google Cloud | chi installa |
+| `google_token.json` | token con refresh | `setup_google.py codice` |
+| `bozza_transazione.json` | lo stato del dialogo in corso | lo script |
+
+Lo stesso commit, quindi, gira su istanze diverse con fogli e account Google diversi.
+
 ### Costanti
 
-Tutte in cima a [`budget_sheets.py:36-42`](budget_sheets.py#L36-L42):
+Tutte in cima a [`budget_sheets.py:39-107`](budget_sheets.py#L39-L107):
 
-| Costante | Valore | Note |
+| Costante | Da dove | Note |
 |---|---|---|
-| `PROFILE_DIR` | `/opt/data/profiles/budgetingagent` | il profilo Hermes |
+| `PROFILE_DIR` | `HERMES_HOME`, altrimenti `~/.hermes` | il profilo Hermes |
 | `TOKEN_FILE` | `<PROFILE_DIR>/google_token.json` | token con refresh |
 | `CRED_FILE` | `<PROFILE_DIR>/google_client_secret.json` | credenziali OAuth |
-| `SPREADSHEET_ID` | `1iDYzjzy…M6JB0` | il foglio di destinazione |
-| `ANNO_BUDGET` | `2026` | l'anno delle transazioni; si aggiorna a mano una volta l'anno, e una guardia presidia lo scarto (vedi §13.4) |
-| `GOOGLE_SHEET_NAME` | `Transazioni 2026` | per default `Transazioni {ANNO_BUDGET}`, sovrascrivibile |
+| `GOOGLE_SPREADSHEET_ID` | ambiente, poi `.env` | il foglio di destinazione; **obbligatoria**, nessun default |
+| `ANNO_BUDGET` | ambiente, poi `.env` | l'anno delle transazioni; **obbligatoria**, nessun default; `None` se non sono quattro cifre. Si aggiorna una volta l'anno, e una guardia presidia lo scarto (§13.4) |
+| `GOOGLE_SHEET_NAME` | ambiente, poi `.env` | per default `Transazioni {ANNO_BUDGET}` |
+| `CONFIGURAZIONE` | — | i nomi delle obbligatorie: le cerca `configurazione_mancante()`, le dichiara `requires_env` |
 | `TASSONOMIA_FILE` | accanto allo script | risolto da `__file__` |
 
 `ANNO_BUDGET` e `GOOGLE_SHEET_NAME` non sono la stessa cosa e non vanno confusi: il primo
@@ -753,33 +782,59 @@ dice **quale anno il budget tiene**, il secondo **dove si scrive**. Oggi il nome
 parla dell'anno e per comodità lo eredita, ma un foglio che tenesse più anni si chiamerebbe
 solo `Transazioni` — e `ANNO_BUDGET` continuerebbe a valere lo stesso.
 
-### Variabili d'ambiente
+### Come si leggono
+
+`_config(nome)` guarda **prima l'ambiente, poi `<PROFILE_DIR>/.env`**, e la stringa vuota
+vale come «non impostato» in entrambi. Dentro Hermes il secondo passo non fa niente: il `.env`
+del profilo è già nell'ambiente. Serve a chi lancia la CLI da una shell, dove c'è al massimo
+`HERMES_HOME`. Il parser è il minimo — `CHIAVE=valore`, commenti, `export`, apici — e non
+sovrascrive mai l'ambiente.
 
 | Variabile | Default | Uso |
 |---|---|---|
+| `GOOGLE_SPREADSHEET_ID` | — | l'id del foglio: la parte dell'URL fra `/d/` e `/edit` |
+| `ANNO_BUDGET` | — | l'anno del budget |
+| `GOOGLE_SHEET_NAME` | `Transazioni {ANNO_BUDGET}` | il nome della scheda, per svincolarlo dall'anno |
+| `HERMES_HOME` | `~/.hermes` | la imposta Hermes; da una shell va esportata a mano |
 | `BUDGET_BOZZA_FILE` | (vedi sotto) | override del percorso della bozza — **usato dai test** |
 | `BUDGET_BOZZA_TTL_MIN` | `15` | TTL della bozza in minuti; un valore storto non fa esplodere l'import |
-| `ANNO_BUDGET` | `2026` | override dell'anno del budget; un valore non numerico **fa fallire l'import**, deliberatamente — **usato anche dalla suite** (vedi sotto) |
-| `GOOGLE_SHEET_NAME` | `Transazioni {ANNO_BUDGET}` | override del nome della scheda, per svincolarlo dall'anno |
 
-**Le due variabili nuove si chiamano come la costante che sovrascrivono.** Non c'è una
-seconda parola da ricordare né un prefisso da indovinare: letto `ANNO_BUDGET` nel codice, si
-sa già come esportarlo. Le due `BUDGET_BOZZA_*` sono anteriori a questa convenzione e non
-sono state rinominate: i test le usano, e cambiarle non avrebbe avuto niente a che fare con
-l'anno del budget.
+**Ogni variabile si chiama come la costante che imposta.** Non c'è una seconda parola da
+ricordare né un prefisso da indovinare: letto `ANNO_BUDGET` nel codice, si sa già cosa
+scrivere nel `.env`. È anche ciò che permette a `configurazione_mancante()` di cercarle per
+nome. Le due `BUDGET_BOZZA_*` sono anteriori a questa convenzione e non sono state
+rinominate: i test le usano.
 
-`ANNO_BUDGET` degrada diversamente da `BUDGET_BOZZA_TTL_MIN`: un TTL storto non compromette
-i dati e ripiega sul default, un anno storto sceglierebbe il **foglio sbagliato**. Meglio non
-partire. La stringa vuota vale in entrambi i casi come «non impostato».
+**Una configurazione mancante non fa fallire l'import, e nemmeno una storta.** Un
+`GOOGLE_SPREADSHEET_ID` vuoto, o un `ANNO_BUDGET` che non è un anno, danno lo stato
+`errore_configurazione` all'inizio di ogni turno, con un messaggio che nomina la variabile e
+il `.env`. Fino a SPEC-05 un anno storto faceva fallire l'import («meglio non partire»): aveva
+senso finché la variabile serviva alle prove da terminale, non più ora che la scrive chi
+installa. In un plugin un import fallito vuol dire tool sparito, e a «benzina 50»
+risponderebbe il modello per conto suo — la parafrasi che tutta l'architettura serve a
+impedire. Vedi [SPEC-05](specs/05-configurazione-per-istanza.md).
 
-**La suite imposta `ANNO_BUDGET` all'anno civile**, in [`tests/percorsi.py`](tests/percorsi.py)
-— l'unico modulo che ogni file di test importa *prima* di `budget_sheets`, che lo legge
-all'import. Senza, la guardia sul cambio d'anno renderebbe rossa in blocco ogni prova che
-esegue un turno il 1° gennaio: un centinaio di fallimenti muti per una costante da aggiornare
-(misurato: `ANNO_BUDGET=2025 make test` ne produce 106). Lo scarto lo sorveglia **un** test
-apposta, `TestAnnoBudget.test_la_costante_e_allineata_all_anno_civile`, che rilegge il
-default dal sorgente in un subprocess e fallisce da solo dicendo cosa fare. È un
-`setdefault`, quindi `ANNO_BUDGET=2025 make test` resta una prova possibile.
+**Limite: un profilo per processo.** `os.environ` è globale, e le costanti di questo modulo si
+fissano all'import con il profilo che c'era allora. Un processo Hermes che servisse più
+profili insieme li distinguerebbe per richiesta, e questo modulo non se ne accorgerebbe. Oggi
+ogni istanza è un processo suo; il giorno che non lo fosse, la configurazione andrebbe letta
+a ogni turno.
+
+**La suite si dà un profilo finto**, in [`tests/percorsi.py`](tests/percorsi.py) — l'unico
+modulo che ogni file di test importa *prima* di `budget_sheets`, che legge la configurazione
+all'import:
+
+- `HERMES_HOME` è una directory temporanea vuota, **assegnata** e non `setdefault`: lanciata
+  sul server, la suite non deve vedere token, `.env` o bozza del profilo vero;
+- `ANNO_BUDGET` è l'anno civile, con `setdefault`. Senza, la guardia sul cambio d'anno
+  renderebbe rossa in blocco ogni prova che esegue un turno il 1° gennaio (misurato:
+  `ANNO_BUDGET=2025 make test` ne produce un centinaio); con `setdefault`,
+  `ANNO_BUDGET=2025 make test` resta una prova possibile;
+- `GOOGLE_SPREADSHEET_ID` è `foglio-di-prova`, con `setdefault`.
+
+Il test che rileggeva l'anno di default dal sorgente, e diventava rosso a Capodanno, non c'è
+più, perché non c'è più un default nel sorgente. Lo scarto fra l'anno configurato e quello
+civile lo presidia `anno_disallineato()`, a runtime e per ciascuna istanza.
 
 ### Dove vive la bozza
 
@@ -797,9 +852,43 @@ else:                           →  <tmpdir>/budget_bozza_transazione.json
 2. **Hermes sostituisce la directory del plugin a ogni update.** Uno stato scritto lì dentro
    sparirebbe insieme alla vecchia versione.
 
-> Su una macchina di sviluppo `PROFILE_DIR` non esiste, quindi la bozza finisce in `/tmp`.
+> Su una macchina di sviluppo senza Hermes `PROFILE_DIR` (`~/.hermes`) non esiste, quindi la
+> bozza finisce in `/tmp`.
 > È il motivo per cui i test impostano `BUDGET_BOZZA_FILE` **prima** di caricare il plugin:
 > senza, userebbero la bozza vera del profilo.
+
+### Il primo consenso: `setup_google.py`
+
+Un'istanza nuova non ha un token. Lo crea [`setup_google.py`](setup_google.py), stdlib come il
+resto, in tre passi da una shell con `HERMES_HOME` sul profilo:
+
+| Comando | Cosa fa |
+|---|---|
+| `url` | stampa l'indirizzo del consenso e salva il verifier PKCE in `<PROFILE_DIR>/budget_oauth_pending.json` (`0600`) |
+| `codice "<indirizzo>"` | scambia il codice con un token e scrive `google_token.json` (`0600`) nel formato che legge `get_access_token()` |
+| `verifica` | configurazione, client, token, foglio raggiungibile, scheda presente, anno allineato; legge solo titolo e nomi delle schede, **non scrive** |
+
+Le scelte che contano:
+
+- **Un solo scope, `spreadsheets`**, quello dichiarato in [`privacy.md`](privacy.md). Il
+  `setup.py` della skill google-workspace di Hermes, a cui rimandava il vecchio messaggio
+  d'errore, chiede anche Gmail, Drive e Calendar.
+- **Funziona senza browser sul server.** Il redirect è `http://localhost:1`, dove non ascolta
+  nessuno: il browser, anche su un altro computer, si ferma su una pagina che non si carica, e
+  l'indirizzo con il codice si copia dalla barra. Serve un client «App desktop», l'unico che
+  accetta il loopback; `url` rifiuta gli altri.
+- **PKCE e `state`**: il codice passa da un copia-incolla, e senza il verifier, che non lascia
+  mai il server, non si scambia.
+- **`codice` non sostituisce un token esistente senza `--force`.** Il file ha lo stesso nome
+  di quello della skill google-workspace, e sostituirlo in silenzio toglierebbe l'accesso a
+  quell'integrazione. Il controllo viene prima della rete: il codice vale una volta sola.
+- **Lo scope concesso si controlla.** Il consenso di Google ha le caselle, e si può accettare
+  senza spuntare quella dei fogli: in quel caso `codice` si ferma invece di salvare un token
+  che fallirebbe alla prima scrittura.
+
+Il nome non contiene `budget_sheets`, quindi `blocca_scorciatoie` non lo ferma: l'agente può
+lanciarlo dal terminale, se chi installa preferisce incollargli l'indirizzo in chat. Non può
+scrivere righe sul foglio. Vedi [SPEC-06](specs/06-consenso-oauth-incluso.md).
 
 ### Installazione
 
@@ -812,6 +901,11 @@ hermes plugins list        # ✓ budget-familiare v1.0.0 (1 tools, 4 hooks)
 I plugin generali sono disabilitati di default: senza `enable` non carica. Il `--ref` vuole
 uno SHA esatto di 40 caratteri — tag e branch vengono rifiutati.
 
+`install` chiede le variabili di `requires_env` e le salva nel `.env` del profilo attivo: per
+un profilo che non è quello di default va lanciato come `hermes -p <profilo> plugins install
+…`. La procedura completa per un'istanza nuova, con il foglio e le credenziali Google, sta nel
+[README](README.md).
+
 ### Sincronizzazione dal server
 
 `scripts/sync_budget_skill.sh` gira da cron ogni 30 minuti sul server. Entra in
@@ -821,11 +915,14 @@ e, se il worktree è sporco, fa `git add -A` + commit `auto-sync: <ts>` + `git p
 > ⚠️ **Il checkout sul server è il repo.** Una modifica fatta lì viene committata e
 > pushata da sola, senza revisione. Non c'è nessun gate.
 
+> ⚠️ **Solo sull'istanza di sviluppo.** Il cron va installato su un'istanza sola: su una
+> seconda spingerebbe su `main` anche lei, con le sue modifiche locali e senza revisione.
+
 ---
 
 ## 12. Test ed eval
 
-288 test, tutti con la sola stdlib, in meno di mezzo secondo. `make test` li esegue tutti.
+329 test, tutti con la sola stdlib, in meno di un secondo. `make test` li esegue tutti.
 
 | Comando | Cosa gira |
 |---|---|
@@ -842,6 +939,7 @@ e, se il worktree è sporco, fa `git add -A` + commit `auto-sync: <ts>` + `git p
 | `test_budget_sheets.py` | il motore: validazione, tassonomia, macchina a stati, CLI con exit code, strato di rete sotto mock |
 | `test_plugin.py` | le cinque superfici e il manifest |
 | `test_schemas.py` | cosa il modello **non** deve sapere, e che il prompt resti corto |
+| `test_setup_google.py` | il consenso OAuth e la verifica: parametri PKCE, formato e permessi del token, `--force`, nessuna scrittura sul foglio |
 | `eval_protocollo.py` | il protocollo: messaggi mostrati, gating della conferma, trappole, riga finale |
 | `eval_smemorato.py` | resistenza: modelli che dimenticano tutto fra un turno e l'altro |
 | `eval_modello.py` | l'interpretazione reale: un modello legge lo schema e si misura cosa ne ricava |
@@ -879,13 +977,13 @@ dire come si comporta *quel* modello.
       for c in b.leggi_tassonomia()]"
    ```
 4. Aggiorna i punti che hanno **copiato** il dato:
-   - [`tests/test_budget_sheets.py:227`](tests/test_budget_sheets.py#L227) — il conteggio `17`
-   - [`tests/test_budget_sheets.py:231-250`](tests/test_budget_sheets.py#L231-L250) — nomi,
+   - [`tests/test_budget_sheets.py:339`](tests/test_budget_sheets.py#L339) — il conteggio `17`
+   - [`tests/test_budget_sheets.py:343-357`](tests/test_budget_sheets.py#L343-L357) — nomi,
      insieme delle categorie senza sottocategorie, lista ordinata delle sottocategorie di
      *Cibo fuori*
-   - [`tests/test_budget_sheets.py:257-262`](tests/test_budget_sheets.py#L257-L262) — id→nome
+   - [`tests/test_budget_sheets.py:368-376`](tests/test_budget_sheets.py#L368-L376) — id→nome
      per 1/3/17 e gli id fuori range (`0, 18, 99`: il `18` va alzato se aggiungi categorie)
-   - [`tests/test_budget_sheets.py:634-635`](tests/test_budget_sheets.py#L634-L635) —
+   - [`tests/test_budget_sheets.py:816-817`](tests/test_budget_sheets.py#L816-L817) —
      `"\n2. Supermercato"`, `"\n17. Beneficienza"`
    - [`tests/eval_smemorato.py:203-204`](tests/eval_smemorato.py#L203-L204) —
      `"\n3. Cibo fuori / bevute"`, `"\n5. Ristorante"`
@@ -902,13 +1000,13 @@ dire come si comporta *quel* modello.
   «Descrizione» farebbe fallire il test per collisione con il testo dello schema.
 
 > ⚠️ **`_TASSONOMIA_CACHE` è globale di processo e non viene mai invalidata**
-> ([`:175`](budget_sheets.py#L175)). Dopo aver modificato `tassonomia.yaml` sul server serve
+> ([`:240`](budget_sheets.py#L240)). Dopo aver modificato `tassonomia.yaml` sul server serve
 > un ricaricamento del plugin (o un riavvio del processo Hermes) perché la modifica abbia
 > effetto. Da CLI non si nota, perché ogni invocazione è un processo nuovo.
 
 ### 13.2 Cambiare un messaggio mostrato all'utente
 
-Unico posto: [`componi_messaggio()`](budget_sheets.py#L718). Non esistono copie altrove — è
+Unico posto: [`componi_messaggio()`](budget_sheets.py#L794). Non esistono copie altrove — è
 l'invariante I2. Controlla però le asserzioni letterali in `test_budget_sheets.py` e in
 [`eval_smemorato.py:196-204`](tests/eval_smemorato.py#L196-L204), che legge il testo mostrato
 per trovarci dentro il numero da digitare. `casi_eval.json` invece non contiene testo di
@@ -918,20 +1016,23 @@ messaggi: i suoi `stati_attesi` sono nomi di stato.
 
 Tocca cinque punti, in quest'ordine:
 
-1. `CAMPI` ([`:70`](budget_sheets.py#L70)) — se il campo va persistito nella bozza;
+1. `CAMPI` ([`:135`](budget_sheets.py#L135)) — se il campo va persistito nella bozza;
 2. `CAMPI_TOOL` + `properties` in [`schemas.py`](schemas.py) — se il modello deve estrarlo;
 3. `normalizza()` — se serve validazione e una domanda dedicata (nuovo stato `chiedi_*`);
 4. `risolvi_risposta()` — la mappa stato→campo;
-5. `ETICHETTE` ([`:644`](budget_sheets.py#L644)) e `append_row()` — riepilogo e colonna.
+5. `ETICHETTE` ([`:770`](budget_sheets.py#L770)) e `append_row()` — riepilogo e colonna.
 
 Se aggiungi uno stato `chiedi_*`, aggiungi anche il ramo in `componi_messaggio()`: il
 fallback ritorna `dettaglio`, cioè stringa vuota, e l'utente vedrebbe un messaggio vuoto.
 
 ### 13.4 Cambiare il foglio a inizio anno
 
-**L'ordine conta: prima la scheda sul foglio, poi la costante.** Finché l'anno civile e
+Si fa **istanza per istanza**: ogni famiglia ha il suo foglio, e la scheda del nuovo anno la
+crea ciascuna sul proprio. Non serve una release.
+
+**L'ordine conta: prima la scheda sul foglio, poi l'anno.** Finché l'anno civile e
 `ANNO_BUDGET` non combaciano, `anno_disallineato()`
-([`:376`](budget_sheets.py#L376)) blocca ogni turno con lo stato `errore_anno` e il plugin
+([`:441`](budget_sheets.py#L441)) blocca ogni turno con lo stato `errore_anno` e il plugin
 non registra niente — lo dice nominando entrambi gli anni. È deliberato: la scheda del nuovo
 anno potrebbe non esistere ancora, e scrivere comunque su quella vecchia è peggio di un
 errore. L'unica cosa che resta possibile è `annulla`, perché chi ha un dialogo a metà deve
@@ -939,13 +1040,12 @@ poterlo chiudere anche a configurazione rotta.
 
 Il confronto è `!=` e non `>`: portare avanti `ANNO_BUDGET` in anticipo blocca invece di far
 finire le spese di dicembre in silenzio sulla scheda dell'anno dopo. Bloccarsi è rumoroso e
-si annulla riportando indietro la costante; una riga sul foglio sbagliato no.
+si annulla riportando indietro l'anno; una riga sul foglio sbagliato no.
 
-Poi si cambia la costante a [`:40`](budget_sheets.py#L40), **un punto solo**: il nome della
-scheda ne discende. Serve una modifica al codice e un redeploy — l'esercizio non va
-configurato da ambiente, anche se la variabile omonima esiste: quella è per i test e per le
-prove. Se ci si dimentica, se ne accorge `TestAnnoBudget.test_la_costante_e_allineata_all_anno_civile`,
-che diventa rosso da solo il 1° gennaio (vedi §11).
+Poi si cambia `ANNO_BUDGET` nel `.env` del profilo dell'istanza, **un punto solo**: il nome
+della scheda ne discende. Le costanti si leggono all'import, quindi serve un riavvio di
+Hermes. Se ci si dimentica, se ne accorge `errore_anno` il 1° gennaio, con un messaggio che
+dice cosa fare.
 
 **Cosa succede il giorno dopo.** Appena `ANNO_BUDGET` si sposta, `_nell_anno()` (§4.5) inizia
 a rifiutare tutto ciò che è datato l'anno prima — comprese «ieri» e «l'altro ieri» dei primi
@@ -954,11 +1054,11 @@ si registrano più, e non c'è una via di fuga: è la conseguenza voluta di *«l
 di fuori dell'anno in corso non deve essere possibile, mai»*
 ([SPEC-03](specs/03-vincolo-anno-sulle-date.md), «Decisioni»). Chi fa la migrazione deve
 saperlo — e chi ha spese di fine anno da registrare fa bene a registrarle **prima** di
-spostare la costante.
+spostare l'anno.
 
 Se un giorno il foglio smettesse di parlare dell'anno — una scheda `Transazioni` che li
-tiene tutti — il nome si sgancia esportando `GOOGLE_SHEET_NAME`, o cambiando il default a
-[`:41`](budget_sheets.py#L41); e `ANNO_BUDGET` resta a dire quali date il budget accetta.
+tiene tutti — il nome si sgancia impostando `GOOGLE_SHEET_NAME` nel `.env`; e `ANNO_BUDGET`
+resta a dire quali date il budget accetta.
 
 ### 13.5 Modificare il comportamento del trigger
 
@@ -981,8 +1081,8 @@ proprio perché misura il modello vero.
 `in_dialogo()` è definito come `stato_corrente().startswith("chiedi_")`. Lo stato
 `scrittura_in_corso` non inizia per `chiedi_`, quindi `in_dialogo()` ritorna `False`,
 quindi `forza_instradamento` imposta `nuova=True`, quindi `_turno` esegue `cancella_bozza()`
-alla [riga 865](budget_sheets.py#L866) — **cancellando il marcatore prima di leggerlo** alla
-[riga 868](budget_sheets.py#L869).
+alla [riga 1027](budget_sheets.py#L1027) — **cancellando il marcatore prima di leggerlo** alla
+[riga 1030](budget_sheets.py#L1030).
 
 La guardia scatta solo da CLI, invocata senza `--nuova`.
 
@@ -990,12 +1090,12 @@ La guardia scatta solo da CLI, invocata senza `--nuova`.
 
 1. il turno 2 apre una transazione nuova a campi vuoti e comincia a chiedere;
 2. quando il turno 1 completa la scrittura, esegue `cancella_bozza()` alla
-   [riga 950](budget_sheets.py#L951) e **cancella la bozza del turno 2**;
+   [riga 1112](budget_sheets.py#L1112) e **cancella la bozza del turno 2**;
 3. l'utente risponde alla domanda del turno 2 e riceve `bozza_assente`.
 
-**Dove intervenire:** `in_dialogo()` ([`:828`](budget_sheets.py#L828)) — far sì che consideri
+**Dove intervenire:** `in_dialogo()` ([`:981`](budget_sheets.py#L981)) — far sì che consideri
 anche `scrittura_in_corso` come «dialogo in corso» — oppure spostare la guardia della riga
-868 prima del `if nuova` della riga 864.
+1030 prima del `if nuova` della riga 1026.
 
 ### 14.2 `bozza_scaduta` non raggiunge mai l'utente con quel nome
 
@@ -1006,7 +1106,7 @@ una bozza scaduta la **cancella già lì** e ritorna la stringa `"scaduta"`. Qua
 esegue, il file non c'è più: `carica_bozza()` ritorna `None` e lo stato emesso è
 `bozza_assente`.
 
-Oggi è innocuo perché [`componi_messaggio:708`](budget_sheets.py#L709) rende i due stati con
+Oggi è innocuo perché [`componi_messaggio:848`](budget_sheets.py#L848) rende i due stati con
 lo stesso testo. Ma se un giorno si volesse dire «la transazione di prima è scaduta» invece
 di «non sto registrando niente», non basterebbe cambiare quel ramo.
 
@@ -1035,7 +1135,7 @@ potrebbero scambiarsi il messaggio.
 
 | Dove | Cosa |
 |---|---|
-| [`budget_sheets.py:965`](budget_sheets.py#L965) | l'help di `--categoria` dice `references/tassonomia.yaml`: quella cartella non esiste più |
+| [`budget_sheets.py:1126`](budget_sheets.py#L1126) | l'help di `--categoria` dice `references/tassonomia.yaml`: quella cartella non esiste più |
 | [`tests/eval_modello.py:78`](tests/eval_modello.py#L78) | stessa etichetta stantia nel prompt dell'eval |
 | [`tests/eval_protocollo.py:29`](tests/eval_protocollo.py#L29) | importa `TASSONOMIA` e non lo usa |
 | [`tests/casi_eval.json:8`](tests/casi_eval.json#L8) | un commento cita ancora `SKILL.md`, rimossa in `5eb3258` |
@@ -1044,7 +1144,7 @@ potrebbero scambiarsi il messaggio.
 ### 14.6 Interfaccia legacy a tipi misti
 
 I wrapper `validate_categoria`, `validate_sottocategoria`, `find_categoria_by_id`,
-`find_sottocategoria_by_id` ([`:291-335`](budget_sheets.py#L291-L335)) ritornano `False` in
+`find_sottocategoria_by_id` ([`:356-400`](budget_sheets.py#L356-L400)) ritornano `False` in
 caso di fallimento e una stringa (a volte `""`, che è falsy) in caso di successo. Sono
 l'interfaccia storica, usata solo dai test; il codice di produzione usa
 `trova_categoria`/`trova_sottocategoria`, che ritornano `None` o il dizionario. Non
@@ -1084,5 +1184,6 @@ chiedere che rischiare un doppione — ma è una scelta, non un'omissione.
 | Un dialogo a metà «si dimentica» | TTL scaduto, o §14.1 | `BUDGET_BOZZA_TTL_MIN`, `carica_bozza()` |
 | Due transazioni si fondono | `nuova` non derivato | `forza_instradamento`, `in_dialogo()` |
 | «Non riesco a capire se … è entrata o uscita» | `entrambi` senza tipo sulla sotto | `tipo_di()`, `tassonomia.yaml` |
-| La riga non arriva sul foglio | auth o rete | `errore_auth` / `errore_scrittura`; stderr |
+| La riga non arriva sul foglio | auth o rete | `errore_auth` / `errore_scrittura`; stderr; `setup_google.py verifica` |
+| «Il budget non è configurato su questa istanza» | `.env` del profilo | §11; `HERMES_HOME` del processo |
 | Modifica alla tassonomia senza effetto sul server | `_TASSONOMIA_CACHE` | ricarica il plugin |

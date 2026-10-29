@@ -61,25 +61,84 @@ class TestAnnoBudget(unittest.TestCase):
         cambiare anno ridiventerebbe una modifica in due punti."""
         self.assertEqual(bs.GOOGLE_SHEET_NAME, f"Transazioni {bs.ANNO_BUDGET}")
 
-    def test_la_costante_e_allineata_all_anno_civile(self):
-        """Un rosso solo, che dice perche', invece di cinquanta muti.
 
-        La suite gira con ANNO_BUDGET forzato all'anno civile (vedi percorsi.py),
-        altrimenti la guardia sul cambio d'anno farebbe fallire in blocco ogni
-        prova che esegue un turno. Senza questo test resterebbe tutto verde
-        mentre in produzione il plugin non registra piu' niente.
+class TestConfigurazione(unittest.TestCase):
+    """Da dove si legge la configurazione dell'istanza.
 
-        Si rilegge il default dal sorgente, non da bs.ANNO_BUDGET: quello ormai
-        e' il valore iniettato, e confrontarlo con l'orologio non direbbe nulla.
-        """
-        env = {k: v for k, v in os.environ.items() if k != "ANNO_BUDGET"}
+    Le costanti si fissano all'import, quindi ogni prova rilegge il modulo in un
+    processo nuovo, con l'ambiente e il profilo che le servono. Patchare le
+    globali qui non proverebbe niente: e' proprio la lettura che si vuole vedere.
+    """
+
+    def setUp(self):
+        d = tempfile.TemporaryDirectory()
+        self.addCleanup(d.cleanup)
+        self.profilo = d.name
+
+    def importa(self, ambiente=None, dotenv=None):
+        """[GOOGLE_SPREADSHEET_ID, ANNO_BUDGET, PROFILE_DIR, TOKEN_FILE] da un import pulito."""
+        if dotenv is not None:
+            with open(os.path.join(self.profilo, ".env"), "w") as f:
+                f.write(dotenv)
+        env = {k: v for k, v in os.environ.items() if k not in bs.CONFIGURAZIONE}
+        env["HERMES_HOME"] = self.profilo
+        env.update(ambiente or {})
         r = subprocess.run(
-            [sys.executable, "-c", "import budget_sheets; print(budget_sheets.ANNO_BUDGET)"],
+            [sys.executable, "-c",
+             "import json, budget_sheets as b; print(json.dumps("
+             "[b.GOOGLE_SPREADSHEET_ID, b.ANNO_BUDGET, b.PROFILE_DIR, b.TOKEN_FILE]))"],
             capture_output=True, text=True, cwd=SCRIPTS, env=env)
-        self.assertEqual(
-            int(r.stdout.strip()), datetime.now().year,
-            "crea la scheda del nuovo anno sul foglio, poi aggiorna ANNO_BUDGET in "
-            "budget_sheets.py: finché non combaciano il plugin non registra niente")
+        self.assertEqual(r.returncode, 0, f"l'import non deve fallire:\n{r.stderr}")
+        return json.loads(r.stdout)
+
+    def test_il_profilo_e_hermes_home(self):
+        _, _, profilo, token = self.importa()
+        self.assertEqual(profilo, self.profilo)
+        self.assertEqual(os.path.dirname(token), self.profilo)
+
+    def test_senza_configurazione_non_c_e_niente_di_inventato(self):
+        """Nessun foglio e nessun anno di default: un default nel sorgente e' il
+        foglio di qualcun altro."""
+        foglio, anno, _, _ = self.importa()
+        self.assertEqual((foglio, anno), ("", None))
+
+    def test_letta_dal_env_del_profilo(self):
+        """Da una shell c'e' solo HERMES_HOME: il resto sta nel .env, scritto da
+        `hermes plugins install` nella forma che gli pare."""
+        foglio, anno, _, _ = self.importa(dotenv=(
+            "# scritto da hermes\n"
+            'GOOGLE_SPREADSHEET_ID="id-dal-file"\n'
+            "export ANNO_BUDGET=2031\n"
+            "RIGA SENZA UGUALE\n"))
+        self.assertEqual((foglio, anno), ("id-dal-file", 2031))
+
+    def test_l_ambiente_vince_sul_env_del_profilo(self):
+        foglio, _, _, _ = self.importa(
+            ambiente={"GOOGLE_SPREADSHEET_ID": "id-dall-ambiente"},
+            dotenv="GOOGLE_SPREADSHEET_ID=id-dal-file\n")
+        self.assertEqual(foglio, "id-dall-ambiente")
+
+    def test_un_valore_vuoto_vale_come_assente(self):
+        foglio, _, _, _ = self.importa(
+            ambiente={"GOOGLE_SPREADSHEET_ID": ""},
+            dotenv="GOOGLE_SPREADSHEET_ID=id-dal-file\n")
+        self.assertEqual(foglio, "id-dal-file")
+
+    def test_un_anno_storto_non_fa_fallire_l_import(self):
+        """Un import fallito lascia Hermes senza il tool, e a "benzina 50"
+        risponderebbe il modello. Meglio un anno assente, che ferma il turno con
+        un messaggio dello script."""
+        for valore in ("duemila", "26", "2026.0", " "):
+            with self.subTest(valore=valore):
+                _, anno, _, _ = self.importa(ambiente={"ANNO_BUDGET": valore})
+                self.assertIsNone(anno)
+
+    def test_le_mancanti_si_trovano_per_nome(self):
+        with mock.patch.object(bs, "GOOGLE_SPREADSHEET_ID", ""), \
+             mock.patch.object(bs, "ANNO_BUDGET", None):
+            self.assertEqual(bs.configurazione_mancante(),
+                             ["GOOGLE_SPREADSHEET_ID", "ANNO_BUDGET"])
+        self.assertEqual(bs.configurazione_mancante(), [])
 
 
 # ─────────────────────────────────────────────
@@ -1224,6 +1283,79 @@ class TestGuardiaAnno(ConBozza):
 
 
 # ─────────────────────────────────────────────
+# La guardia sulla configurazione
+# ─────────────────────────────────────────────
+
+class TestGuardiaConfigurazione(ConBozza):
+    """Un'istanza installata senza foglio o senza anno non registra niente, e
+    lo dice nominando cosa manca. Come per la guardia d'anno, una bozza gia'
+    aperta si deve poter chiudere lo stesso."""
+
+    def turno(self, foglio="", **kwargs):
+        """Un turno senza l'id del foglio e senza rete. Ritorna (payload, scritte)."""
+        scritte = []
+
+        def finto_append_row(*args, **kw):
+            scritte.append(args)
+            return "X!A1:G1"
+
+        with mock.patch.object(bs, "GOOGLE_SPREADSHEET_ID", foglio), \
+             mock.patch.object(bs, "get_access_token", return_value="token-finto"), \
+             mock.patch.object(bs, "append_row", side_effect=finto_append_row):
+            return bs.esegui(**kwargs), scritte
+
+    def test_non_si_registra_niente(self):
+        self.scrivi_bozza("chiedi_conferma", {"data": OGGI, "importo": 30.0,
+                                              "categoria": "Supermercato"})
+        with open(self.bozza, "rb") as f:
+            prima = f.read()
+
+        payload, scritte = self.turno(risposta="sì")
+
+        self.assertEqual(payload["stato"], "errore_configurazione")
+        self.assertEqual(scritte, [], "senza configurazione non si tocca il foglio")
+        with open(self.bozza, "rb") as f:
+            self.assertEqual(f.read(), prima, "la bozza resta dov'era, intatta")
+
+    def test_annulla_resta_possibile(self):
+        self.scrivi_bozza("chiedi_categoria", {"importo": 30.0})
+
+        payload, scritte = self.turno(annulla=True)
+
+        self.assertEqual(payload["stato"], "annullata")
+        self.assertEqual(scritte, [])
+        self.assertFalse(os.path.exists(self.bozza), "annulla deve cancellare la bozza")
+
+    def test_il_messaggio_nomina_cosa_manca_e_dove(self):
+        payload, _ = self.turno(nuova=True, importo="30")
+        messaggio = payload["messaggio"]
+        self.assertIn("GOOGLE_SPREADSHEET_ID", messaggio)
+        self.assertIn(".env", messaggio, "il messaggio deve dire dove si sistema")
+        self.assertNotIn("ANNO_BUDGET", messaggio, "l'anno c'e': non va nominato")
+
+    def test_viene_prima_della_guardia_d_anno(self):
+        """Senza anno quella direbbe «impostato sul None»."""
+        with mock.patch.object(bs, "ANNO_BUDGET", None):
+            payload, _ = self.turno(foglio="un-foglio", nuova=True)
+            messaggio = payload["messaggio"]
+        self.assertEqual(payload["stato"], "errore_configurazione")
+        self.assertIn("ANNO_BUDGET", messaggio)
+        self.assertNotIn("None", messaggio)
+
+    def test_exit_8_end_to_end(self):
+        """Lo script davvero, in un profilo senza .env e senza l'id nell'ambiente:
+        non arriva mai a chiedere un token, quindi non puo' toccare Google."""
+        env = {k: v for k, v in os.environ.items() if k != "GOOGLE_SPREADSHEET_ID"}
+        r = subprocess.run(
+            [sys.executable, SCRIPT,
+             "append", "--nuova", "--importo", "30", "--categoria", "Supermercato"],
+            capture_output=True, text=True,
+            env={**env, "BUDGET_BOZZA_FILE": self.bozza})
+        self.assertEqual(r.returncode, 8, r.stderr)
+        self.assertEqual(json.loads(r.stdout)["stato"], "errore_configurazione")
+
+
+# ─────────────────────────────────────────────
 # Strato di rete (sempre sotto mock)
 # ─────────────────────────────────────────────
 
@@ -1310,7 +1442,7 @@ class TestAuth(unittest.TestCase):
                         side_effect=_errore_http(400, b'{"error":"invalid_grant"}')):
             with self.assertRaises(RuntimeError) as cm:
                 bs._do_refresh("rt", "cid", "csec")
-        self.assertIn("setup.py", str(cm.exception))
+        self.assertIn("setup_google.py url", str(cm.exception))
 
     def test_altro_errore_oauth_propagato(self):
         with mock.patch("urllib.request.urlopen",
@@ -1406,7 +1538,7 @@ class TestAppendRow(unittest.TestCase):
         _, richiesta = self.esegui({"updates": {"updatedRange": "X!A1:G1"}})
         url = richiesta.full_url
         self.assertIn(urllib.parse.quote(bs.GOOGLE_SHEET_NAME), url)
-        self.assertIn(bs.SPREADSHEET_ID, url)
+        self.assertIn(bs.GOOGLE_SPREADSHEET_ID, url)
         self.assertIn("!A:G:append", url)
         self.assertIn("valueInputOption=USER_ENTERED", url)
         self.assertIn("insertDataOption=INSERT_ROWS", url)

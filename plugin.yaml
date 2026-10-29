@@ -17,8 +17,22 @@ provides_hooks:
   - transform_llm_output
   - on_session_end
 
+# Quello che cambia da un'istanza all'altra. `hermes plugins install` lo chiede
+# e lo salva nel .env del profilo; budget_sheets.py lo legge con lo stesso nome
+# (CONFIGURAZIONE), e un test verifica che le due liste coincidano. Se manca,
+# il turno finisce in `errore_configurazione` invece di scrivere.
+requires_env:
+  - name: GOOGLE_SPREADSHEET_ID
+    description: "ID del foglio Google: la parte dell'URL fra /d/ e /edit"
+  - name: ANNO_BUDGET
+    description: "Anno del budget, es. 2026: la scheda «Transazioni <anno>» deve esistere"
+
+# Per default la scheda si chiama «Transazioni <ANNO_BUDGET>».
+optional_env:
+  - GOOGLE_SHEET_NAME
+
 # Niente `capabilities`: non si fa override di tool ne' del modello, quindi
 # all'installazione non c'e' nessun consenso da chiedere.
 #
-# Niente `requires_env`: credenziali Google e id del foglio stanno nel profilo
-# (PROFILE_DIR in budget_sheets.py), non nell'ambiente.
+# Le credenziali Google non stanno qui: sono file nel profilo (HERMES_HOME),
+# creati da setup_google.py.

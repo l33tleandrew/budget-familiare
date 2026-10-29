@@ -35,13 +35,17 @@ The Application requests the following OAuth 2.0 scope:
 
 | Scope | Purpose |
 |---|---|
-| `https://www.googleapis.com/auth/spreadsheets` | Append a row to the spreadsheet configured by the user |
+| `https://www.googleapis.com/auth/spreadsheets` | Append a row to the spreadsheet configured by the user, and check during setup that the spreadsheet and its sheet exist |
 
-The Application uses this scope for a single operation: appending one row to the
-configured sheet. It does not read spreadsheet contents, modify or delete existing
-rows, access other spreadsheets, or access Google Drive, Gmail, contacts or account
-profile information. The only data it receives from Google APIs is the confirmation
-of the write (the cell range of the appended row).
+The Application uses this scope for two operations: appending one row to the
+configured sheet, and, only when the person installing it runs the setup check
+(`setup_google.py verifica`), reading the configured spreadsheet's title and the
+names of its sheets to confirm the configuration is correct. It does not read
+spreadsheet contents (cell values), modify or delete existing rows, access other
+spreadsheets, or access Google Drive, Gmail, contacts or account profile information.
+The only data it receives from Google APIs is the confirmation of the write (the cell
+range of the appended row) and, during the setup check, the spreadsheet's title and
+sheet names, which are shown on the installer's terminal and not stored.
 
 ### 3.2 Data provided by the user
 
@@ -71,6 +75,7 @@ All data remains on the user's machine or in the user's Google account:
 |---|---|---|
 | OAuth client credentials (`google_client_secret.json`) | Profile directory of the user's Hermes instance | Until the user deletes them |
 | OAuth access and refresh tokens (`google_token.json`) | Profile directory of the user's Hermes instance | Until the user revokes access or deletes the file |
+| Pending authorization (`budget_oauth_pending.json`, a one-time PKCE verifier) | Profile directory of the user's Hermes instance | Deleted when the authorization completes |
 | Draft of the transaction in progress | Profile directory of the user's Hermes instance, or the system temporary directory if that is unavailable | Deleted when the transaction is recorded or after 15 minutes of inactivity |
 | Recorded transactions | The user's Google Sheets spreadsheet | Under the user's control |
 
